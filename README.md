@@ -72,30 +72,55 @@
 + `class Fields`
 
   ```c++
-  class Fields {
-  public:
-      // 从 FieldArray 构造
-      explicit Fields(FieldArray field_array);
-      // 从字符串解码构造
-      explicit Fields(const std::string& value_str);
+    class Fields {
+        private:
+            FieldArray fields_;
+
+        public:
+            /* 从 FieldArray 构造 */
+            explicit Fields(const FieldArray& fields);
+            /* 从单个 Field 构造 */
+            explicit Fields(const Field& field);
+            /* 只传参 field_name 数组的构造 */
+            explicit Fields(const std::vector<std::string>& field_names);
+    
+            Fields() = default;
+            ~Fields() = default;
   
-      ~Fields();
+            /* 根据 field_name 从小到大进行排序，减少通过 field_name 遍历 Fields 的耗时 */
+            void SortFields();
+    
+            /* 更新/插入单个字段值，插入后会进行 Fields 排序，减少通过 field_name 遍历 Fields 的耗时 */
+            void UpdateField(const std::string& field_name, const std::string& field_value);
+            void UpdateField(const Field& field);
+            /* 更新/插入多个字段值 */
+            void UpdateFields(const std::vector<std::string>& field_names, const std::vector<std::string>& field_values);
+            void UpdateFields(const FieldArray& fields);
   
-      // 更新字段值
-      void update_field(const std::string& name, const std::string& value);
-      // 获取字段
-      Field get_field(const std::string& name) const;
-      // 检查字段是否存在
-      bool has_field(const std::string& name) const;
-      // 序列化字段数组为字符串
-      std::string Serialize() const;
-      // 重载运算符 [] 用于访问字段值
-      std::string operator[](const std::string& name) const;
-      // 重载运算符 [] 用于修改字段值
-      std::string& operator[](const std::string& name);
-      // 重载运算符 == 用于比较两个 Fields 是否相等
-      bool operator==(const Fields& other) const;
-  };
+            /* 删除单个字段 */
+            void DeleteField(const std::string& field_name);
+            /* 删除多个字段 */
+            void DeleteFields(const std::vector<std::string>& field_names);
+    
+            /* 序列化 Field 或 FieldArray 为 value 字符串 */
+            /* static 修饰的函数序列化/反序列化无需访问一个 Fields 对象的 fields_ */
+            static std::string SerializeValue(const FieldArray& fields);
+            static std::string SerializeValue(const Field& field);
+            std::string SerializeValue() const;
+    
+            /* 反序列化 value 字符串为 Fields */
+            static Fields ParseValue(const std::string& value_str);
+    
+            /* 获取字段 */
+            Field GetField(const std::string& field_name) const;
+            /* 检查字段是否存在 */
+            bool HasField(const std::string& field_name) const;
+  
+            /* 重载运算符 [] 用于访问字段值 */
+            std::string operator[](const std::string& field_name) const;
+            /* 重载运算符 [] 用于修改字段值 */
+            std::string& operator[](const std::string& field_name);
+    };
   ```
 
 ### 4.2  KV 分离

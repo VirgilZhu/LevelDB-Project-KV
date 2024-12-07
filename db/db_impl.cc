@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include "fields.h"
 #include "db/builder.h"
 #include "db/db_iter.h"
 #include "db/dbformat.h"
@@ -1192,6 +1193,22 @@ void DBImpl::ReleaseSnapshot(const Snapshot* snapshot) {
   MutexLock l(&mutex_);
   snapshots_.Delete(static_cast<const SnapshotImpl*>(snapshot));
 }
+
+/***    DBImpl 类关于 Fields 类的 Put、Get 接口    ***/
+Status DBImpl::PutFields(const WriteOptions& o, const Slice& key, const Fields& fields) {
+    return DBImpl::Put(o, key, Slice(fields.SerializeValue()));
+}
+
+Status DBImpl::GetFields(const ReadOptions& o, const Slice& key, Fields& fields) {
+    std::string value_str;
+
+    Status s = DBImpl::Get(o, key, &value_str);
+    if (!s.ok()) return s;
+
+    fields = Fields::ParseValue(value_str);
+    return Status::OK();
+}
+/**************************************************/
 
 // Convenience methods
 Status DBImpl::Put(const WriteOptions& o, const Slice& key, const Slice& val) {

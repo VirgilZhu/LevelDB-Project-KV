@@ -25,6 +25,7 @@ class TableCache;
 class Version;
 class VersionEdit;
 class VersionSet;
+class Fields;
 
 class DBImpl : public DB {
  public:
@@ -36,6 +37,9 @@ class DBImpl : public DB {
   ~DBImpl() override;
 
   // Implementations of the DB interface
+  Status PutFields(const WriteOptions&, const Slice& key, const Fields& fields);
+  Status GetFields(const ReadOptions& options, const Slice& key, Fields& fields);
+
   Status Put(const WriteOptions&, const Slice& key,
              const Slice& value) override;
   Status Delete(const WriteOptions&, const Slice& key) override;

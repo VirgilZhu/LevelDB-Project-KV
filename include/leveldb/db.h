@@ -148,8 +148,8 @@ class LEVELDB_EXPORT DB {
 
   // ----------------------------For TTL-----------------------------
   // 为当前key设置ttl，过期后自动失效
-  virtual Status Put(const WriteOptions& options, const Slice& key,
-                     const Slice& value, uint64_t ttl) = 0;
+//  virtual Status Put(const WriteOptions& options, const Slice& key,
+//                     const Slice& value, uint64_t ttl) = 0;
 };
 
 // Destroy the contents of the specified database.
