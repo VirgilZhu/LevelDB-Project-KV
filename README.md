@@ -120,6 +120,9 @@
             std::string operator[](const std::string& field_name) const;
             /* 重载运算符 [] 用于修改字段值 */
             std::string& operator[](const std::string& field_name);
+  
+            /* 通过若干个字段查询 Key */
+            static std::vector<std::string> FindKeysByFields(leveldb::DB* db, const FieldArray& fields);
     };
   ```
 

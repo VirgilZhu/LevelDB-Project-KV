@@ -162,4 +162,40 @@ std::string& Fields::operator[](const std::string& field_name) {
     return fields_.back().second;
 }
 
+/* 通过若干个字段查询 Key */
+std::vector<std::string> Fields::FindKeysByFields(leveldb::DB* db, const FieldArray& fields) {
+    Fields to_fields = Fields(fields);
+    to_fields.Fields::SortFields();
+    FieldArray search_fields_ = to_fields.fields_;
+
+    std::vector<std::string> find_keys;
+
+    Iterator* it = db->NewIterator(leveldb::ReadOptions());
+    for (it->SeekToFirst(); it->Valid(); it->Next()) {
+
+        Slice iter_key_slice = it->key();
+        Slice iter_key_for_parse;
+        if (!GetLengthPrefixedSlice(&iter_key_slice, &iter_key_for_parse)) {
+            continue;
+        }
+
+        std::string iter_key = iter_key_for_parse.ToString();
+        if (std::find(find_keys.begin(), find_keys.end(), iter_key) != find_keys.end()){
+            continue;
+        }
+
+        FieldArray iter_fields_ = Fields::ParseValue(it->value().ToString()).fields_;
+        if (iter_fields_ == search_fields_ ||
+            std::includes(iter_fields_.begin(), iter_fields_.end(),
+                          search_fields_.begin(), search_fields_.end())) {
+            find_keys.emplace_back(iter_key);
+        }
+    }
+
+    assert(it->status().ok());
+    delete it;
+
+    return find_keys;
+}
+
 } // namespace leveldb
