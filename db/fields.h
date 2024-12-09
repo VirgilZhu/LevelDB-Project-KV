@@ -59,6 +59,15 @@ class Fields {
 
         /* 通过若干个字段查询 Key */
         static std::vector<std::string> FindKeysByFields(leveldb::DB* db, const FieldArray& fields);
+
+        using iterator = std::vector<Field>::iterator;
+        using const_iterator = std::vector<Field>::const_iterator;
+
+        iterator begin() { return fields_.begin(); }
+        const_iterator begin() const { return fields_.cbegin(); }
+        iterator end() { return fields_.end(); }
+        const_iterator end() const { return fields_.cend(); }
+        size_t size() const { return fields_.size(); }
 };
 
 }  // namespace leveldb
