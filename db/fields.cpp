@@ -1,6 +1,8 @@
 #include <iostream>
 #include <utility>
 
+//#include <fstream>
+
 #include "fields.h"
 #include "util/coding.h"
 #include "dbformat.h"
@@ -129,6 +131,8 @@ Field Fields::GetField(const std::string& field_name) const {
             return {};
         }
     }
+    std::cerr << "GetField Failed:  field name [" + field_name + "] doesn't exist, return {}." << std::endl;
+    return {};
 }
 
 /* 检查字段是否存在 */
@@ -137,6 +141,7 @@ bool Fields::HasField(const std::string& field_name) const {
         if ((*iter).first == field_name) return true;
         if ((*iter).first > field_name || iter == fields_.end() - 1) return false;
     }
+    return false;
 }
 
 /* 重载运算符 [] 用于访问字段值 */
@@ -149,6 +154,9 @@ std::string Fields::operator[](const std::string& field_name) const {
             return empty_str;
         }
     }
+    static const std::string empty_str;
+    std::cerr << "GetField Failed:  field name [" + field_name + "] doesn't exist." << std::endl;
+    return empty_str;
 }
 
 std::string& Fields::operator[](const std::string& field_name) {
@@ -163,94 +171,23 @@ std::string& Fields::operator[](const std::string& field_name) {
 }
 
 /* 通过若干个字段查询 Key */
-// std::vector<std::string> Fields::FindKeysByFields(leveldb::DB* db, const FieldArray& fields) {
-//    Fields to_fields = Fields(fields);
-//    to_fields.Fields::SortFields();
-//    FieldArray search_fields_ = to_fields.fields_;
-
-//    std::vector<std::string> find_keys;
-
-//    Iterator* it = db->NewIterator(leveldb::ReadOptions());
-//    for (it->SeekToFirst(); it->Valid(); it->Next()) {
-
-//        Slice iter_key_slice = it->key();
-//        Slice iter_key_for_parse;
-//        if (!GetLengthPrefixedSlice(&iter_key_slice, &iter_key_for_parse)) {
-//            continue;
-//        }
-
-//        std::string iter_key = iter_key_for_parse.ToString();
-//        if (std::find(find_keys.begin(), find_keys.end(), iter_key) != find_keys.end()){
-//            continue;
-//        }
-
-//        FieldArray iter_fields_ = Fields::ParseValue(it->value().ToString()).fields_;
-//        if (iter_fields_ == search_fields_ ||
-//            std::includes(iter_fields_.begin(), iter_fields_.end(),
-//                          search_fields_.begin(), search_fields_.end())) {
-//            find_keys.emplace_back(iter_key);
-//        }
-//    }
-
-//    assert(it->status().ok());
-//    delete it;
-
-//    return find_keys;
-// }
-
-std::vector<std::string> Fields::FindKeysByFields(leveldb::DB* db, const FieldArray& fields) {
+ std::vector<std::string> Fields::FindKeysByFields(leveldb::DB* db, const FieldArray& fields) {
     Fields to_fields = Fields(fields);
     to_fields.Fields::SortFields();
     FieldArray search_fields_ = to_fields.fields_;
 
     std::vector<std::string> find_keys;
-    std::vector<std::string> deleted_keys;
 
     Iterator* it = db->NewIterator(leveldb::ReadOptions());
     for (it->SeekToFirst(); it->Valid(); it->Next()) {
 
-        Slice iter_key_slice = it->key();
-        const char* p = iter_key_slice.data();
-        const char* limit = p + iter_key_slice.size();
-//        const char* limit = p + 5;
-
-        uint32_t key_length;
-        const char* key_ptr = GetVarint32Ptr(p, limit, &key_length);
-
-        iter_key_slice = Slice(p, iter_key_slice.size() - 8);
-        Slice iter_key_for_parse;
-        if (!GetLengthPrefixedSlice(&iter_key_slice, &iter_key_for_parse)) {
+        std::string iter_key = it->key().ToString();
+        if (std::find(find_keys.begin(), find_keys.end(), iter_key) != find_keys.end()){
             continue;
         }
 
-        std::string iter_key = iter_key_for_parse.ToString();
+        FieldArray iter_fields_ = Fields::ParseValue(it->value().ToString()).fields_;
 
-        std::cout << "iter_key_str: " + iter_key << std::endl;
-
-        
-        if (std::find(deleted_keys.begin(), deleted_keys.end(), iter_key) != deleted_keys.end()
-            || std::find(find_keys.begin(), find_keys.end(), iter_key) != find_keys.end()) {
-            continue;
-        }
-
-        const uint64_t tag = DecodeFixed64(key_ptr + key_length - 8);
-        if ((tag & 0xff) == kTypeDeletion) {
-            deleted_keys.emplace_back(iter_key);
-            continue;
-        }
-
-        std::cout << "iter_tag_str: " + tag << std::endl;
-
-        Slice iter_value_slice = it->value();
-        Slice iter_value_for_parse;
-        if (!GetLengthPrefixedSlice(&iter_value_slice, &iter_value_for_parse)) {
-            continue;
-        }
-
-        std::cout << "iter_value_str: " + iter_value_for_parse.ToString() << std::endl;
-        
-        FieldArray iter_fields_ = Fields::ParseValue(iter_value_for_parse.ToString()).fields_;
-        // FieldArray iter_fields_ = Fields::ParseValue(it->value().ToString()).fields_;
         if (iter_fields_ == search_fields_ ||
             std::includes(iter_fields_.begin(), iter_fields_.end(),
                           search_fields_.begin(), search_fields_.end())) {
@@ -262,6 +199,80 @@ std::vector<std::string> Fields::FindKeysByFields(leveldb::DB* db, const FieldAr
     delete it;
 
     return find_keys;
-}
+ }
+
+//std::vector<std::string> Fields::FindKeysByFields(leveldb::DB* db, const FieldArray& fields) {
+//    Fields to_fields = Fields(fields);
+//    to_fields.Fields::SortFields();
+//    FieldArray search_fields_ = to_fields.fields_;
+//
+//    std::vector<std::string> find_keys;
+//    std::vector<std::string> deleted_keys;
+//
+//    std::ofstream outfile;
+//    outfile.open("/home/workspace/leveldb_kv/test/log.txt");
+//    outfile.clear();
+//    outfile << "aaaaaaaaaaaaaaaaaaa\n";
+//
+//    Iterator* it = db->NewIterator(leveldb::ReadOptions());
+//    for (it->SeekToFirst(); it->Valid(); it->Next()) {
+//
+//        Slice iter_key_slice = it->key();
+//        outfile << "\niter_key_slice: " + iter_key_slice.ToString() + "\n";
+//        const char* p = iter_key_slice.data();
+//        const char* limit = p + iter_key_slice.size();
+////        const char* limit = p + 5;
+//
+//        uint32_t key_length;
+//        const char* key_ptr = GetVarint32Ptr(p, limit, &key_length);
+//
+//        iter_key_slice = Slice(p, iter_key_slice.size() - 8);
+//
+////        outfile << "\niter_key_slice: " + iter_key_slice.ToString() + "\n";
+//
+//        Slice iter_key_for_parse;
+//        if (!GetLengthPrefixedSlice(&iter_key_slice, &iter_key_for_parse)) {
+//            continue;
+//        }
+//
+//        std::string iter_key = iter_key_for_parse.ToString();
+//
+//        outfile << "\niter_key_str: " + iter_key + "\n";
+//
+//        if (std::find(deleted_keys.begin(), deleted_keys.end(), iter_key) != deleted_keys.end()
+//            || std::find(find_keys.begin(), find_keys.end(), iter_key) != find_keys.end()) {
+//            continue;
+//        }
+//
+//        const uint64_t tag = DecodeFixed64(key_ptr + key_length - 8);
+//        if ((tag & 0xff) == kTypeDeletion) {
+//            deleted_keys.emplace_back(iter_key);
+//            continue;
+//        }
+//
+//        outfile << "\niter_tag_str: " + std::to_string(tag) + "\n";
+//
+//        Slice iter_value_slice = it->value();
+//        Slice iter_value_for_parse;
+//        if (!GetLengthPrefixedSlice(&iter_value_slice, &iter_value_for_parse)) {
+//            continue;
+//        }
+//
+//        outfile << "\niter_value_str: " + iter_value_for_parse.ToString() + "\n";
+//
+//        FieldArray iter_fields_ = Fields::ParseValue(iter_value_for_parse.ToString()).fields_;
+//        // FieldArray iter_fields_ = Fields::ParseValue(it->value().ToString()).fields_;
+//        if (iter_fields_ == search_fields_ ||
+//            std::includes(iter_fields_.begin(), iter_fields_.end(),
+//                          search_fields_.begin(), search_fields_.end())) {
+//            find_keys.emplace_back(iter_key);
+//        }
+//    }
+//
+//    assert(it->status().ok());
+//    delete it;
+//
+//    return find_keys;
+//}
 
 } // namespace leveldb

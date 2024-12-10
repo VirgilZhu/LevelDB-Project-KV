@@ -22,7 +22,7 @@ struct Options;
 struct ReadOptions;
 struct WriteOptions;
 class WriteBatch;
-// class Fields;
+class Fields;
 
 // Abstract handle to particular state of a DB.
 // A Snapshot is an immutable object and can therefore be safely
@@ -61,8 +61,8 @@ class LEVELDB_EXPORT DB {
 
   virtual ~DB();
 
-  virtual Status PutFields(const WriteOptions&, const Slice& key, const Fields& fields);
-  virtual Status GetFields(const ReadOptions& options, const Slice& key, Fields& fields);
+  virtual Status PutFields(const WriteOptions&, const Slice& key, const Fields& fields) = 0;
+  virtual Status GetFields(const ReadOptions& options, const Slice& key, Fields& fields) = 0;
 
   // Set the database entry for "key" to "value".  Returns OK on success,
   // and a non-OK status on error.
