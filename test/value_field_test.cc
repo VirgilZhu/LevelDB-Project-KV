@@ -1,6 +1,7 @@
 #include "gtest/gtest.h"
 #include "leveldb/db.h"
 #include "db/fields.h"
+#include "db/db_impl.h"
 #include "leveldb/write_batch.h"
 
 using namespace leveldb;
@@ -238,19 +239,18 @@ TEST_F(FieldsTest, TestBulkInsertSortSerializeAndFindKeys) {
         FieldArray fields = {{"field1", "value1_" + std::to_string(i)}, {"field2", "value2_" + std::to_string(i)}};
         data_to_insert[key] = Fields(fields);
 
-        // 将序列化后的字段添加到 WriteBatch 中
-        batch.Put(key, data_to_insert[key].SerializeValue());
-    }
+        Fields ffields = Fields(fields);
 
-    // 提交批量写入操作
-    Status status = db_->Write(WriteOptions(), &batch);
-    EXPECT_TRUE(status.ok()) << "Failed to write batch: " << status.ToString();
+        // 将序列化后的字段添加到 WriteBatch 中
+        Status status = db_->PutFields(WriteOptions(), Slice(key), ffields);
+        EXPECT_TRUE(status.ok()) << "Failed to put fields for key: " << key << ", error: " << status.ToString();
+    }
 
     // 验证插入的数据是否正确
     for (size_t i = 1; i <= num_entries; ++i) {
         std::string key = "key_" + std::to_string(i);
         std::string value;
-        status = db_->Get(ReadOptions(), key, &value);
+        Status status = db_->Get(ReadOptions(), key, &value);
         EXPECT_TRUE(status.ok()) << "Failed to read key: " << key << ", error: " << status.ToString();
 
         // 反序列化并验证字段值

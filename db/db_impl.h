@@ -37,8 +37,8 @@ class DBImpl : public DB {
   ~DBImpl() override;
 
   // Implementations of the DB interface
-  Status PutFields(const WriteOptions&, const Slice& key, const Fields& fields);
-  Status GetFields(const ReadOptions& options, const Slice& key, Fields& fields);
+  Status PutFields(const WriteOptions&, const Slice& key, const Fields& fields) override;
+  Status GetFields(const ReadOptions& options, const Slice& key, Fields& fields) override;
 
   Status Put(const WriteOptions&, const Slice& key,
              const Slice& value) override;

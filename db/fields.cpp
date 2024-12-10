@@ -224,6 +224,10 @@ std::vector<std::string> Fields::FindKeysByFields(leveldb::DB* db, const FieldAr
         }
 
         std::string iter_key = iter_key_for_parse.ToString();
+
+        std::cout << "iter_key_str: " + iter_key << std::endl;
+
+        
         if (std::find(deleted_keys.begin(), deleted_keys.end(), iter_key) != deleted_keys.end()
             || std::find(find_keys.begin(), find_keys.end(), iter_key) != find_keys.end()) {
             continue;
@@ -235,7 +239,18 @@ std::vector<std::string> Fields::FindKeysByFields(leveldb::DB* db, const FieldAr
             continue;
         }
 
-        FieldArray iter_fields_ = Fields::ParseValue(it->value().ToString()).fields_;
+        std::cout << "iter_tag_str: " + tag << std::endl;
+
+        Slice iter_value_slice = it->value();
+        Slice iter_value_for_parse;
+        if (!GetLengthPrefixedSlice(&iter_value_slice, &iter_value_for_parse)) {
+            continue;
+        }
+
+        std::cout << "iter_value_str: " + iter_value_for_parse.ToString() << std::endl;
+        
+        FieldArray iter_fields_ = Fields::ParseValue(iter_value_for_parse.ToString()).fields_;
+        // FieldArray iter_fields_ = Fields::ParseValue(it->value().ToString()).fields_;
         if (iter_fields_ == search_fields_ ||
             std::includes(iter_fields_.begin(), iter_fields_.end(),
                           search_fields_.begin(), search_fields_.end())) {
