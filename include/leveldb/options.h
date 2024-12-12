@@ -145,6 +145,12 @@ struct LEVELDB_EXPORT Options {
   // Many applications will benefit from passing the result of
   // NewBloomFilterPolicy() here.
   const FilterPolicy* filter_policy = nullptr;
+
+  // vlog 过期 kv 计数器触发 GC 的阈值
+  int expired_threshold;
+
+  // vlog 文件大小上限
+  int max_vlog_size = 64 * 1024 * 1024;
 };
 
 // Options that control read operations
