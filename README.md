@@ -33,8 +33,15 @@
   3. 允许在存储 KV 键值对前修改字段内容；
   4. 允许通过字段值查询所有对应的 key。
 + **实现思路：**
-  1. 设计类 `Fields` 来操作字段数组，与字段相关的字段截取、读写操作、序列化等函数均在 `Fields` 类中实现；
-  2. 通过字段查询 Key ：实现函数 `FindKeysByField`，传入若干字段名和字段值（即子字段数组），遍历查找 LSM-Tree 找到对应的若干 key。
+  1. 定义一个` Fields`类来管理`LevelDB`中的字段。其中`Field`是使用标准库中的`std::pair<std::string, std::string>` 定义了单个字段的格式，而`FieldArray`则是使用了`std::vector<Field>` 来定义一组字段。
+  2. 定义`fields_`这一私有成员变量，它是一个 `FieldArray` 类型的向量，用来存储一组字段。
+  3. 定义一系列的构造函数来支持从不同类型的参数创建`Fields`对象。
+  4. 定义了`SortFields`方法来确保在创建`Fields`对象时，各个字段会根据`field_name`从小到大进行排序，进而减少后续更新删除操作中会出现的通过 `field_name` 遍历 `Fields` 的耗时。
+  5. 定义了`UpdateField` 和 `UpdateFields` 方法允许用户更新或插入单个或多个字段，以及`DeleteField` 和 `DeleteFields` 方法允许用户删除单个或多个字段。实现思路是通过遍历fields_来查找匹配的field_name并对其进行更新（若不存在则插入）以及删除操作（⭐在上述操作的实现中，由于字段列表的有序性，遍历时可通过比较field_name大小来提前判断该字段是否存在，对于小字段的查找尤其明显，进而有效减少搜索时间，提高搜索效率。）
+  6. 定义`SerializeValue` 和 `ParseValue` 方法分别用于将字段序列化为字符串或将字符串反序列化为字段对象。实现时是调用了`conding.h`文件中的`PutLengthPrefixedSlice`函数以及`GetLengthPrefixedSlice`函数，它们的作用分别是对一个`string`进行编码并在其前面加入长度信息和将编码后的`string`中的长度信息去除，提取出原始`string`。这两个函数不仅可以完美实现我们对字段编码的最初设计，同时也和`lsm-tree`里原来所有的`kv`数据对的编码保持一致。
+  7. 定义`GetField`和`HasField`方法用于访问特定字段和检查字段是否存在，实现思路与更新删除操作类似，也是对`fields_`进行遍历。
+  8. 重载 `[]` 运算符，以提供类似字典的字段访问方式。对于常量对象，`operator[]` 返回字段值的副本，如果给定的字段名不存在，则返回一个空字符串，并输出错误信息。而对于非常量对象，`operator[]` 返回字段值的引用，并允许修改该字段值。如果给定的字段名不存在，则会插入一个新的字段，并返回新字段值的引用。
+  9. 定义了一个静态方法`FindKeysByFields` 用于根据若干个字段在数据库中查找对应的键。实现上是使用`LevelDB`提供的`API`创建一个`NewIterator`,从数据库的第一个条目遍历到最后一个条目。事先定义了`find_keys` 来存储找到的键，在遍历过程中，为了避免重复处理同一个键，会先检查当前键是否已经存在于 `find_keys` 中。如果存在，则跳过此条目。若不存在，则提取其`value`部分，利用 `ParseValue` 方法将字符串形式的值解析为 `Fields` 对象，进而获得该条目对应的字段数组。再对解析后的字段数组与`search_fields_`进行匹配，这里支持完全匹配和部分匹配，将匹配的`key`存入`find_keys`中，最后返回`find_keys`。(💡Tips：在使用`Iterator`进行遍历时，`it.key()`和`it.value()`获取的其实是`kv`字符串本身，不需要我们再解码`kv length`和考虑`tag`（`ktypevalue`、`ktypedeletion`）。我们在设计之初并未考虑到这一点，是在后续测试的`debug`中发现了这一情况)
 
 ### 2.2  KV 分离
 
@@ -75,7 +82,7 @@
     class Fields {
         private:
             FieldArray fields_;
-
+  
         public:
             /* 从 FieldArray 构造 */
             explicit Fields(const FieldArray& fields);
