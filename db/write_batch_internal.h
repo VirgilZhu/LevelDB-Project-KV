@@ -37,6 +37,8 @@ class WriteBatchInternal {
 
   static Status InsertInto(const WriteBatch* batch, MemTable* memtable);
 
+  static Status InsertInto(const WriteBatch* batch, MemTable* memtable,uint64_t fid, size_t offset);
+
   static void Append(WriteBatch* dst, const WriteBatch* src);
 };
 

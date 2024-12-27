@@ -12,6 +12,7 @@
 
 #include "db/dbformat.h"
 #include "db/log_writer.h"
+#include "db/vlog_writer.h"
 #include "db/snapshot.h"
 #include "leveldb/db.h"
 #include "leveldb/env.h"
@@ -207,6 +208,8 @@ class DBImpl : public DB {
   Status bg_error_ GUARDED_BY(mutex_);
 
   CompactionStats stats_[config::kNumLevels] GUARDED_BY(mutex_);
+
+  log::VlogWriter* vlog_;
 };
 
 // Sanitize db options.  The caller should delete result.info_log if
