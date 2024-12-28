@@ -145,6 +145,16 @@ struct LEVELDB_EXPORT Options {
   // Many applications will benefit from passing the result of
   // NewBloomFilterPolicy() here.
   const FilterPolicy* filter_policy = nullptr;
+
+  /* 需要再研究下 */
+  // value log 的文件大小
+  uint64_t max_value_log_size = 500 * 1024 * 1024;
+  // gc 的回收阈值。
+  uint64_t garbage_collection_threshold = max_value_log_size / 4;
+  // gc 后台回收时候重新put的时候，默认的kv分离的值。
+  uint64_t background_garbage_collection_separate_ = 1024 * 1024 - 1;
+  // 在open 数据库的时候就进行全盘的log文件回收
+  bool start_garbage_collection = true;
 };
 
 // Options that control read operations

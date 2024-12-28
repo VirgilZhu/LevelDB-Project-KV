@@ -36,7 +36,11 @@
 #include "util/logging.h"
 #include "util/mutexlock.h"
 
+#include "db/vlog_reader.h"
+
 namespace leveldb {
+
+using namespace log;
 
 const int kNumNonTableCacheFiles = 10;
 
@@ -1118,6 +1122,25 @@ int64_t DBImpl::TEST_MaxNextLevelOverlappingBytes() {
   return versions_->MaxNextLevelOverlappingBytes();
 }
 
+bool DBImpl::ParseVlogValue(Slice key_value, Slice key,
+                            std::string& value, uint64_t val_size) {
+  Slice k_v = key_value;
+  if (k_v[0] != kTypeSeparation) return false;
+  k_v.remove_prefix(1);
+
+  Slice vlog_key;
+  Slice vlog_value;
+  if (GetLengthPrefixedSlice(&k_v, &vlog_key)
+      && vlog_key == key
+      && GetLengthPrefixedSlice(&k_v, &vlog_value)
+      && vlog_value.size() == val_size) {
+    value = vlog_value.ToString();
+    return true;
+  } else {
+    return false;
+  }
+}
+
 Status DBImpl::Get(const ReadOptions& options, const Slice& key,
                    std::string* value) {
   Status s;
@@ -1162,6 +1185,53 @@ Status DBImpl::Get(const ReadOptions& options, const Slice& key,
   mem->Unref();
   if (imm != nullptr) imm->Unref();
   current->Unref();
+
+  /* Vlog 读取 value */
+  if (s.ok() && s.IsSeparated()) {
+
+    struct VlogReporter : public VlogReader::Reporter {
+      Status* status;
+      void Corruption(size_t bytes, const Status& s) override {
+        if (this->status->ok()) *this->status = s;
+      }
+    };
+
+    VlogReporter reporter;
+    Slice vlog_ptr(*value);
+    uint64_t file_no;
+    uint64_t offset;
+    uint64_t val_size;
+    size_t key_size = key.size();
+
+    GetVarint64(&vlog_ptr, &file_no);
+    GetVarint64(&vlog_ptr, &offset);
+    GetVarint64(&vlog_ptr, &val_size);
+    uint64_t encoded_len = 1 + VarintLength(key_size) + key.size() + VarintLength(val_size) + val_size;
+
+    std::string fname = LogFileName(dbname_, file_no);
+    RandomAccessFile* file;
+    s = env_->NewRandomAccessFile(fname,&file);
+    if (!s.ok()) {
+      return s;
+    }
+
+    VlogReader vlogReader(file, &reporter);
+    Slice key_value;
+    Slice ret_value;
+    char* scratch = new char[encoded_len];
+
+    if (vlogReader.ReadValue(offset, encoded_len, &key_value, scratch)) {
+      value->clear();
+      if (!ParseVlogValue(key_value, key, *value, val_size)) {
+        s = Status::Corruption("value in vlog isn't match with given key");
+      }
+    } else {
+      s = Status::Corruption("read vlog error");
+    }
+
+    delete file;
+  }
+
   return s;
 }
 

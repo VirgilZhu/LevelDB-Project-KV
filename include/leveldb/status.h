@@ -71,6 +71,12 @@ class LEVELDB_EXPORT Status {
   // Returns true iff the status indicates an InvalidArgument.
   bool IsInvalidArgument() const { return code() == kInvalidArgument; }
 
+  bool IsSeparated() const { return code() == kSeparated; }
+
+  void SetSeparated()  { code_ = kSeparated; }
+
+  void SetNotSeparated()  { code_ = kNotSeparated; }
+
   // Return a string representation of this status suitable for printing.
   // Returns the string "OK" for success.
   std::string ToString() const;
@@ -82,9 +88,12 @@ class LEVELDB_EXPORT Status {
     kCorruption = 2,
     kNotSupported = 3,
     kInvalidArgument = 4,
-    kIOError = 5
+    kIOError = 5,
+    kSeparated = 6,
+    kNotSeparated = 7
   };
 
+  Code code_;
   Code code() const {
     return (state_ == nullptr) ? kOk : static_cast<Code>(state_[4]);
   }
@@ -101,6 +110,7 @@ class LEVELDB_EXPORT Status {
 };
 
 inline Status::Status(const Status& rhs) {
+  code_ = rhs.code_;
   state_ = (rhs.state_ == nullptr) ? nullptr : CopyState(rhs.state_);
 }
 inline Status& Status::operator=(const Status& rhs) {
@@ -108,12 +118,14 @@ inline Status& Status::operator=(const Status& rhs) {
   // and the common case where both rhs and *this are ok.
   if (state_ != rhs.state_) {
     delete[] state_;
+    code_ = rhs.code_;
     state_ = (rhs.state_ == nullptr) ? nullptr : CopyState(rhs.state_);
   }
   return *this;
 }
 inline Status& Status::operator=(Status&& rhs) noexcept {
   std::swap(state_, rhs.state_);
+  std::swap(code_ , rhs.code_);
   return *this;
 }
 
