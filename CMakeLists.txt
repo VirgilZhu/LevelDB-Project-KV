@@ -119,7 +119,9 @@ include(GNUInstallDirs)
 
 add_library(leveldb
         db/vlog_reader.h
-        db/vlog_reader.cpp)
+        db/vlog_reader.cc
+        db/vlog_writer.h
+        db/vlog_writer.cc)
 target_sources(leveldb
   PRIVATE
     "${PROJECT_BINARY_DIR}/${LEVELDB_PORT_CONFIG_DIR}/port_config.h"
@@ -526,6 +528,7 @@ endif(LEVELDB_INSTALL)
 add_executable(db_test2
         "${PROJECT_SOURCE_DIR}/test/db_test2.cc"
         test/value_field_test.cc
+        db/vlog_writer.cc
 )
 target_link_libraries(db_test2 PRIVATE leveldb)
 
