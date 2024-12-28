@@ -528,7 +528,6 @@ endif(LEVELDB_INSTALL)
 add_executable(db_test2
         "${PROJECT_SOURCE_DIR}/test/db_test2.cc"
         test/value_field_test.cc
-        db/vlog_writer.cc
 )
 target_link_libraries(db_test2 PRIVATE leveldb)
 

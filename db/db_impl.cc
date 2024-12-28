@@ -1319,7 +1319,11 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
     // into mem_.
     {
       mutex_.Unlock();
-      status = log_->AddRecord(WriteBatchInternal::Contents(write_batch));
+      // 先写入vlog再写入memtable
+      // 写vlog日志 offset 表示这个 write_batch 在vlog中的偏移地址。
+      uint64_t offset = 0;
+      status = vlog_->AddRecord(WriteBatchInternal::Contents(write_batch),offset);
+      // status = log_->AddRecord(WriteBatchInternal::Contents(write_batch));
       bool sync_error = false;
       if (status.ok() && options.sync) {
         status = logfile_->Sync();
@@ -1328,7 +1332,7 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
         }
       }
       if (status.ok()) {
-        status = WriteBatchInternal::InsertInto(write_batch, mem_);
+        status = WriteBatchInternal::InsertInto(write_batch, mem_, logfile_number_, offset);
       }
       mutex_.Lock();
       if (sync_error) {

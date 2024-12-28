@@ -18,7 +18,9 @@
 #include "db/dbformat.h"
 #include "db/memtable.h"
 #include "db/write_batch_internal.h"
+
 #include "leveldb/db.h"
+
 #include "util/coding.h"
 
 namespace leveldb {
@@ -79,6 +81,68 @@ Status WriteBatch::Iterate(Handler* handler) const {
   }
 }
 
+Status WriteBatch::Iterate(Handler* handler, uint64_t fid,
+                           uint64_t offset) const {
+  Slice input(rep_);
+  // 整个writebatch 的起始地址
+  const char* begin = input.data();
+
+  if (input.size() < kHeader) {
+    return Status::Corruption("malformed WriteBatch (too small)");
+  }
+  // 12个字节，8个字节用来表示sequence，4个字节用来表示 count，移除头
+  input.remove_prefix(kHeader);
+  Slice key, value;
+  int found = 0;
+  while (!input.empty()) {
+    found++;
+    const uint64_t kv_offset = input.data() - begin + offset;
+    assert(kv_offset > 0);
+
+    // record 记录为  1 个字节 是 kTypeValue ,剩下的字节是 key value
+    // record 记录为  1 个字节 是 kTypeDeletion， 剩下的字节是key
+    char tag = input[0];
+    input.remove_prefix(1);
+    switch (tag) {
+      case kTypeValue:
+        if (GetLengthPrefixedSlice(&input, &key) &&
+            GetLengthPrefixedSlice(&input, &value)) {
+          handler->Put(key, value);
+        } else {
+          return Status::Corruption("bad WriteBatch Put");
+        }
+        break;
+      case kTypeDeletion:
+        if (GetLengthPrefixedSlice(&input, &key)) {
+          handler->Delete(key);
+        } else {
+          return Status::Corruption("bad WriteBatch Delete");
+        }
+        break;
+      // case kTypeSeparate:
+      //   if (GetLengthPrefixedSlice(&input, &key) &&
+      //       GetLengthPrefixedSlice(&input, &(value))) {
+      //     // value = fileNumber + offset + valuesize 采用变长编码的方式
+      //     std::string dest;
+      //     PutVarint64(&dest, fid);
+      //     PutVarint64(&dest, kv_offset);
+      //     PutVarint64(&dest, value.size());
+      //     Slice value_offset(dest);
+      //     handler->Put(key, value_offset, kTypeSeparate);
+      //   } else {
+      //     return Status::Corruption("bad WriteBatch Put");
+      //   }
+      //   break;
+      default:
+        return Status::Corruption("unknown WriteBatch tag");
+    }
+  }
+  if (found != WriteBatchInternal::Count(this)) {
+    return Status::Corruption("WriteBatch has wrong count");
+  } else {
+    return Status::OK();
+  }
+}
 int WriteBatchInternal::Count(const WriteBatch* b) {
   return DecodeFixed32(b->rep_.data() + 8);
 }
@@ -134,6 +198,15 @@ Status WriteBatchInternal::InsertInto(const WriteBatch* b, MemTable* memtable) {
   inserter.sequence_ = WriteBatchInternal::Sequence(b);
   inserter.mem_ = memtable;
   return b->Iterate(&inserter);
+}
+
+Status WriteBatchInternal::InsertInto(const WriteBatch* b, MemTable* memtable,
+                                      uint64_t fid, size_t offset) {
+  MemTableInserter inserter;
+  // 一批 writeBatch中只有一个sequence，公用的，后续会自加。
+  inserter.sequence_ = WriteBatchInternal::Sequence(b);
+  inserter.mem_ = memtable;
+  return b->Iterate(&inserter, fid, offset);
 }
 
 void WriteBatchInternal::SetContents(WriteBatch* b, const Slice& contents) {
