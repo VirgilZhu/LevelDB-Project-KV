@@ -64,7 +64,7 @@ class MemTable {
 
   uint64_t GetTailSequence() { return tail_sequence_; }
   uint64_t GetLogFileNumber() { return log_file_number_; }
-  uint64_t SetLogFileNumber(uint64_t fid) { log_file_number_ = fid; }
+  void SetLogFileNumber(uint64_t fid) { log_file_number_ = fid; }
 
  private:
   friend class MemTableIterator;

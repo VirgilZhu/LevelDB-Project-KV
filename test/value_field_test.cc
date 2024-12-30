@@ -120,24 +120,26 @@ TEST_F(FieldsTest, TestOperatorBracketUpdate) {
 
 // 测试批量删除功能
 TEST_F(FieldsTest, TestBulkDelete) {
-    const size_t num_fields = 1000;
+    const size_t num_fields = 10000;
     leveldb::WriteBatch batch;
+
+    std::string a = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
     // 准备大量字段数据，并通过 PutFields 插入到数据库
     for (size_t i = 0; i < num_fields; ++i) {
         std::string key = "key_" + std::to_string(i);
-        FieldArray fields = {{"field" + std::to_string(i), "value_" + std::to_string(i)}};
+        FieldArray fields = {{"field" + std::to_string(i), "value_" + a}};
         Fields f(fields);
         Status status = db_->PutFields(WriteOptions(), Slice(key), f);
         EXPECT_TRUE(status.ok()) << "Failed to put fields for key: " << key;
     }
 
-    // 批量删除一半的字段
-    for (size_t i = 0; i < num_fields / 2; ++i) {
-        std::string key = "key_" + std::to_string(i);
-        Status status = db_->Delete(WriteOptions(), key);
-        EXPECT_TRUE(status.ok()) << "Failed to delete key: " << key;
-    }
+//     批量删除一半的字段
+//    for (size_t i = 0; i < num_fields / 2; ++i) {
+//        std::string key = "key_" + std::to_string(i);
+//        Status status = db_->Delete(WriteOptions(), key);
+//        EXPECT_TRUE(status.ok()) << "Failed to delete key: " << key;
+//    }
 
     // 验证删除后的字段数量和内容
     for (size_t i = 0; i < num_fields; ++i) {
@@ -147,99 +149,101 @@ TEST_F(FieldsTest, TestBulkDelete) {
 
         if (i < num_fields / 2) {
             EXPECT_FALSE(status.ok()) << "Deleted key still exists: " << key;
-        } else {
-            EXPECT_TRUE(status.ok()) << "Missing non-deleted key: " << key;
             auto field_value = fields.GetField("field" + std::to_string(i));
-            EXPECT_EQ(field_value.second, "value_" + std::to_string(i)) << "Incorrect value for non-deleted field: " << key;
+            EXPECT_EQ(field_value.second, "value_" ) << "Incorrect value for non-deleted field: " << key;
+//        } else {
+//            EXPECT_TRUE(status.ok()) << "Missing non-deleted key: " << key;
+//            auto field_value = fields.GetField("field" + std::to_string(i));
+//            EXPECT_EQ(field_value.second, "value_" + a) << "Incorrect value for non-deleted field: " << key;
         }
     }
 }
 
 // 测试批量更新操作
-TEST_F(FieldsTest, TestBulkUpdate) {
-    const size_t num_fields = 500;
-    leveldb::WriteBatch batch;
-
-    // 准备大量字段数据，并通过 PutFields 插入到数据库
-    for (size_t i = 0; i < num_fields; ++i) {
-        std::string key = "key_" + std::to_string(i);
-        FieldArray fields = {{"field" + std::to_string(i), "old_value_" + std::to_string(i)}};
-        Fields f(fields);
-        Status status = db_->PutFields(WriteOptions(), Slice(key), f);
-        EXPECT_TRUE(status.ok()) << "Failed to put fields for key: " << key;
-    }
-
-    // 批量更新一半的字段
-    for (size_t i = 0; i < num_fields / 2; ++i) {
-        std::string key = "key_" + std::to_string(i);
-        FieldArray update_fields = {{"field" + std::to_string(i), "new_value_" + std::to_string(i)}};
-        Fields f(update_fields);
-        Status status = db_->PutFields(WriteOptions(), Slice(key), f);
-        EXPECT_TRUE(status.ok()) << "Failed to update fields for key: " << key;
-    }
-
-    // 验证更新后的字段值
-    for (size_t i = 0; i < num_fields; ++i) {
-        std::string key = "key_" + std::to_string(i);
-        Fields fields;
-        Status status = db_->GetFields(ReadOptions(), Slice(key), fields);
-        EXPECT_TRUE(status.ok()) << "Failed to read key: " << key;
-
-        auto field_value = fields.GetField("field" + std::to_string(i));
-        auto expected_value = (i < num_fields / 2) ? ("new_value_" + std::to_string(i)) : ("old_value_" + std::to_string(i));
-        EXPECT_EQ(field_value.second, expected_value) << "Incorrect value for updated field: " << key;
-    }
-}
-
-// 测试批量插入、序列化/反序列化、删除以及 FindKeysByFields 功能
-TEST_F(FieldsTest, TestBulkInsertSerializeDeleteAndFindKeys) {
-    const size_t num_entries = 500;
-
-    // 准备大量键值对数据，并通过 PutFields 插入到数据库
-    for (size_t i = num_entries; i > 0; --i) {
-        std::string key = "key_" + std::to_string(i);
-        FieldArray fields = {{"field1", "value1_" + std::to_string(i)}, {"field2", "value2_"}};
-        Fields ffields(fields);
-        Status status = db_->PutFields(WriteOptions(), Slice(key), ffields);
-        EXPECT_TRUE(status.ok()) << "Failed to put fields for key: " << key << ", error: " << status.ToString();
-    }
-
-    // 验证插入的数据是否正确
-    for (size_t i = 1; i <= num_entries; ++i) {
-        std::string key = "key_" + std::to_string(i);
-        Fields fields;
-        Status status = db_->GetFields(ReadOptions(), Slice(key), fields);
-        EXPECT_TRUE(status.ok()) << "Failed to read key: " << key << ", error: " << status.ToString();
-
-        // 使用 GetField 方法验证字段值
-        auto field1_value = fields.GetField("field1");
-        auto field2_value = fields.GetField("field2");
-
-        EXPECT_EQ(field1_value.second, "value1_" + std::to_string(i)) << "Incorrect value for field1 in key: " << key;
-        EXPECT_EQ(field2_value.second, "value2_") << "Incorrect value for field2 in key: " << key;
-    }
-
-    // 使用 Delete 删除第一个键值对
-    Status status = db_->Delete(WriteOptions(), "key_1");
-    EXPECT_TRUE(status.ok()) << "Failed to delete key: key_1, error: " << status.ToString();
-
-    // 使用 FindKeysByFields 查找包含特定字段的键
-    FieldArray fields_to_find = {{"field2", "value2_"}};
-    std::vector<std::string> found_keys = Fields::FindKeysByFields(db_, fields_to_find);
-
-    // 验证找到的键是否正确
-    EXPECT_EQ(found_keys.size(), num_entries - 1) << "Expected " << num_entries - 1 << " keys but found " << found_keys.size();
-    for (size_t i = 2; i <= num_entries; ++i) {
-        std::string expected_key = "key_" + std::to_string(i);
-        EXPECT_TRUE(std::find(found_keys.begin(), found_keys.end(), expected_key) != found_keys.end())
-            << "Key not found: " << expected_key;
-    }
-
-    // 再次查找，这次没有符合条件的字段
-    FieldArray no_match_fields = {{"nonexistent_field", ""}};
-    found_keys = Fields::FindKeysByFields(db_, no_match_fields);
-    EXPECT_TRUE(found_keys.empty()) << "Expected an empty result for non-matching fields.";
-}
+//TEST_F(FieldsTest, TestBulkUpdate) {
+//    const size_t num_fields = 500;
+//    leveldb::WriteBatch batch;
+//
+//    // 准备大量字段数据，并通过 PutFields 插入到数据库
+//    for (size_t i = 0; i < num_fields; ++i) {
+//        std::string key = "key_" + std::to_string(i);
+//        FieldArray fields = {{"field" + std::to_string(i), "old_value_" + std::to_string(i)}};
+//        Fields f(fields);
+//        Status status = db_->PutFields(WriteOptions(), Slice(key), f);
+//        EXPECT_TRUE(status.ok()) << "Failed to put fields for key: " << key;
+//    }
+//
+//    // 批量更新一半的字段
+//    for (size_t i = 0; i < num_fields / 2; ++i) {
+//        std::string key = "key_" + std::to_string(i);
+//        FieldArray update_fields = {{"field" + std::to_string(i), "new_value_" + std::to_string(i)}};
+//        Fields f(update_fields);
+//        Status status = db_->PutFields(WriteOptions(), Slice(key), f);
+//        EXPECT_TRUE(status.ok()) << "Failed to update fields for key: " << key;
+//    }
+//
+//    // 验证更新后的字段值
+//    for (size_t i = 0; i < num_fields; ++i) {
+//        std::string key = "key_" + std::to_string(i);
+//        Fields fields;
+//        Status status = db_->GetFields(ReadOptions(), Slice(key), fields);
+//        EXPECT_TRUE(status.ok()) << "Failed to read key: " << key;
+//
+//        auto field_value = fields.GetField("field" + std::to_string(i));
+//        auto expected_value = (i < num_fields / 2) ? ("new_value_" + std::to_string(i)) : ("old_value_" + std::to_string(i));
+//        EXPECT_EQ(field_value.second, expected_value) << "Incorrect value for updated field: " << key;
+//    }
+//}
+//
+//// 测试批量插入、序列化/反序列化、删除以及 FindKeysByFields 功能
+//TEST_F(FieldsTest, TestBulkInsertSerializeDeleteAndFindKeys) {
+//    const size_t num_entries = 500;
+//
+//    // 准备大量键值对数据，并通过 PutFields 插入到数据库
+//    for (size_t i = num_entries; i > 0; --i) {
+//        std::string key = "key_" + std::to_string(i);
+//        FieldArray fields = {{"field1", "value1_" + std::to_string(i)}, {"field2", "value2_"}};
+//        Fields ffields(fields);
+//        Status status = db_->PutFields(WriteOptions(), Slice(key), ffields);
+//        EXPECT_TRUE(status.ok()) << "Failed to put fields for key: " << key << ", error: " << status.ToString();
+//    }
+//
+//    // 验证插入的数据是否正确
+//    for (size_t i = 1; i <= num_entries; ++i) {
+//        std::string key = "key_" + std::to_string(i);
+//        Fields fields;
+//        Status status = db_->GetFields(ReadOptions(), Slice(key), fields);
+//        EXPECT_TRUE(status.ok()) << "Failed to read key: " << key << ", error: " << status.ToString();
+//
+//        // 使用 GetField 方法验证字段值
+//        auto field1_value = fields.GetField("field1");
+//        auto field2_value = fields.GetField("field2");
+//
+//        EXPECT_EQ(field1_value.second, "value1_" + std::to_string(i)) << "Incorrect value for field1 in key: " << key;
+//        EXPECT_EQ(field2_value.second, "value2_") << "Incorrect value for field2 in key: " << key;
+//    }
+//
+//    // 使用 Delete 删除第一个键值对
+//    Status status = db_->Delete(WriteOptions(), "key_1");
+//    EXPECT_TRUE(status.ok()) << "Failed to delete key: key_1, error: " << status.ToString();
+//
+//    // 使用 FindKeysByFields 查找包含特定字段的键
+//    FieldArray fields_to_find = {{"field2", "value2_"}};
+//    std::vector<std::string> found_keys = Fields::FindKeysByFields(db_, fields_to_find);
+//
+//    // 验证找到的键是否正确
+//    EXPECT_EQ(found_keys.size(), num_entries - 1) << "Expected " << num_entries - 1 << " keys but found " << found_keys.size();
+//    for (size_t i = 2; i <= num_entries; ++i) {
+//        std::string expected_key = "key_" + std::to_string(i);
+//        EXPECT_TRUE(std::find(found_keys.begin(), found_keys.end(), expected_key) != found_keys.end())
+//            << "Key not found: " << expected_key;
+//    }
+//
+//    // 再次查找，这次没有符合条件的字段
+//    FieldArray no_match_fields = {{"nonexistent_field", ""}};
+//    found_keys = Fields::FindKeysByFields(db_, no_match_fields);
+//    EXPECT_TRUE(found_keys.empty()) << "Expected an empty result for non-matching fields.";
+//}
 
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);

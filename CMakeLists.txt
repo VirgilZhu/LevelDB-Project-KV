@@ -316,7 +316,8 @@ if(LEVELDB_BUILD_TESTS)
         APPEND PROPERTY COMPILE_OPTIONS -Wno-missing-field-initializers)
   endif(LEVELDB_HAVE_NO_MISSING_FIELD_INITIALIZERS)
 
-  add_executable(leveldb_tests "")
+  add_executable(leveldb_tests ""
+          test/kv_test.cc)
   target_sources(leveldb_tests
     PRIVATE
       # "db/fault_injection_test.cc"
@@ -543,3 +544,9 @@ add_executable(value_field_test
         test/value_field_test.cc
 )
 target_link_libraries(value_field_test PRIVATE leveldb gtest)
+
+add_executable(kv_test
+        "${PROJECT_SOURCE_DIR}/test/kv_test.cc"
+        test/kv_test.cc
+)
+target_link_libraries(kv_test PRIVATE leveldb gtest)

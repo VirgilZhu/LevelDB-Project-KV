@@ -1220,7 +1220,6 @@ Status DBImpl::Get(const ReadOptions& options, const Slice& key,
 
     VlogReader vlogReader(file, &reporter);
     Slice key_value;
-    Slice ret_value;
     char* scratch = new char[encoded_len];
 
     if (vlogReader.ReadValue(offset, encoded_len, &key_value, scratch)) {
@@ -1311,6 +1310,7 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
   Status status = MakeRoomForWrite(updates == nullptr);
   uint64_t last_sequence = versions_->LastSequence();
   Writer* last_writer = &w;
+
   if (status.ok() && updates != nullptr) {  // nullptr batch is for compactions
     WriteBatch* write_batch = BuildBatchGroup(&last_writer);
     WriteBatchInternal::SetSequence(write_batch, last_sequence + 1);

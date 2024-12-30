@@ -6,6 +6,7 @@
 #define STORAGE_LEVELDB_INCLUDE_OPTIONS_H_
 
 #include <cstddef>
+#include <cstdint>
 
 #include "leveldb/export.h"
 
@@ -176,7 +177,7 @@ struct LEVELDB_EXPORT ReadOptions {
 
 // Options that control write operations
 struct LEVELDB_EXPORT WriteOptions {
-  explicit WriteOptions(size_t separateThreshold = 16)
+  explicit WriteOptions(size_t separateThreshold = 1)
       : separate_threshold(separateThreshold) {}
 //  WriteOptions() = default;
 
