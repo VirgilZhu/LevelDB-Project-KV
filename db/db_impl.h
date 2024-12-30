@@ -54,6 +54,8 @@ class DBImpl : public DB {
   void GetApproximateSizes(const Range* range, int n, uint64_t* sizes) override;
   void CompactRange(const Slice* begin, const Slice* end) override;
 
+  bool ParseVlogValue(Slice key_value, Slice key, std::string& value, uint64_t val_size);
+
   // Extra methods (for testing) that are not in the public DB interface
 
   // Compact any files in the named level that overlap [*begin,*end]
@@ -184,7 +186,7 @@ class DBImpl : public DB {
   std::atomic<bool> has_imm_;         // So bg thread can detect non-null imm_
   WritableFile* logfile_;
   uint64_t logfile_number_ GUARDED_BY(mutex_);
-  log::Writer* log_;
+//  log::VlogWriter* log_;
   uint32_t seed_ GUARDED_BY(mutex_);  // For sampling.
 
   // Queue of writers.
@@ -210,6 +212,10 @@ class DBImpl : public DB {
   CompactionStats stats_[config::kNumLevels] GUARDED_BY(mutex_);
 
   log::VlogWriter* vlog_;
+
+  int vlog_kv_numbers_;
+
+//  KVSepManagement* gc_management_;
 };
 
 // Sanitize db options.  The caller should delete result.info_log if

@@ -25,6 +25,7 @@
 
 #include "leveldb/export.h"
 #include "leveldb/status.h"
+#include "db/dbformat.h"
 
 namespace leveldb {
 
@@ -35,11 +36,13 @@ class LEVELDB_EXPORT WriteBatch {
   class LEVELDB_EXPORT Handler {
    public:
     virtual ~Handler();
-    virtual void Put(const Slice& key, const Slice& value) = 0;
+    virtual void Put(const Slice& key, const Slice& value, ValueType type = kTypeValue) = 0;
     virtual void Delete(const Slice& key) = 0;
   };
 
   WriteBatch();
+  explicit WriteBatch(size_t separate_threshold)
+      : separate_threshold_(separate_threshold) { Clear(); }
 
   // Intentionally copyable.
   WriteBatch(const WriteBatch&) = default;
@@ -75,7 +78,7 @@ class LEVELDB_EXPORT WriteBatch {
 
  private:
   friend class WriteBatchInternal;
-
+  size_t separate_threshold_;
   std::string rep_;  // See comment in write_batch.cc for the format of rep_
 };
 

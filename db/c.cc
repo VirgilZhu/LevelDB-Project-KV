@@ -349,7 +349,7 @@ void leveldb_writebatch_iterate(const leveldb_writebatch_t* b, void* state,
     void* state_;
     void (*put_)(void*, const char* k, size_t klen, const char* v, size_t vlen);
     void (*deleted_)(void*, const char* k, size_t klen);
-    void Put(const Slice& key, const Slice& value) override {
+    void Put(const Slice& key, const Slice& value, leveldb::ValueType type = leveldb::kTypeValue) override {
       (*put_)(state_, key.data(), key.size(), value.data(), value.size());
     }
     void Delete(const Slice& key) override {

@@ -252,7 +252,16 @@ enum SaverState {
   kDeleted,
   kCorrupt,
 };
+// TODO begin
+enum SaverSeparate {
+    kNotSeparated,
+    kSeparated
+};
+// TODO end
 struct Saver {
+  // TODO begin
+  SaverSeparate separate = kNotSeparated;
+  // TODO end
   SaverState state;
   const Comparator* ucmp;
   Slice user_key;
@@ -266,9 +275,13 @@ static void SaveValue(void* arg, const Slice& ikey, const Slice& v) {
     s->state = kCorrupt;
   } else {
     if (s->ucmp->Compare(parsed_key.user_key, s->user_key) == 0) {
-      s->state = (parsed_key.type == kTypeValue) ? kFound : kDeleted;
+      // s->state = (parsed_key.type == kTypeValue) ? kFound : kDeleted;
+      s->state = (parsed_key.type == kTypeValue || parsed_key.type == kTypeSeparation) ? kFound : kDeleted;
       if (s->state == kFound) {
         s->value->assign(v.data(), v.size());
+        // TODO begin
+        s->separate =  ( parsed_key.type == kTypeSeparation ) ? kSeparated : kNotSeparated;
+        // TODO end
       }
     }
   }
@@ -354,6 +367,13 @@ Status Version::Get(const ReadOptions& options, const LookupKey& k,
       state->s = state->vset->table_cache_->Get(*state->options, f->number,
                                                 f->file_size, state->ikey,
                                                 &state->saver, SaveValue);
+      // TODO begin
+      if( state->saver.separate == kSeparated ){
+          state->s.SetSeparated();
+      } else{
+          state->s.SetNotSeparated();
+      }
+      // TODO end
       if (!state->s.ok()) {
         state->found = true;
         return false;

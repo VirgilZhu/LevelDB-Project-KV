@@ -6,6 +6,7 @@
 #define STORAGE_LEVELDB_INCLUDE_OPTIONS_H_
 
 #include <cstddef>
+#include <cstdint>
 
 #include "leveldb/export.h"
 
@@ -146,11 +147,15 @@ struct LEVELDB_EXPORT Options {
   // NewBloomFilterPolicy() here.
   const FilterPolicy* filter_policy = nullptr;
 
-  // vlog 过期 kv 计数器触发 GC 的阈值
-  int expired_threshold;
-
-  // vlog 文件大小上限
-  int max_vlog_size = 64 * 1024 * 1024;
+  /* 需要再研究下 */
+  // value log 的文件大小
+  uint64_t max_value_log_size = 16 * 1024 * 1024;
+  // gc 的回收阈值。
+  uint64_t garbage_collection_threshold = max_value_log_size / 4;
+  // gc 后台回收时候重新put的时候，默认的kv分离的值。
+  uint64_t background_garbage_collection_separate_ = 1024 * 1024 - 1;
+  // 在open 数据库的时候就进行全盘的log文件回收
+  bool start_garbage_collection = true;
 };
 
 // Options that control read operations
@@ -172,7 +177,9 @@ struct LEVELDB_EXPORT ReadOptions {
 
 // Options that control write operations
 struct LEVELDB_EXPORT WriteOptions {
-  WriteOptions() = default;
+  explicit WriteOptions(size_t separateThreshold = 5)
+      : separate_threshold(separateThreshold) {}
+//  WriteOptions() = default;
 
   // If true, the write will be flushed from the operating system
   // buffer cache (by calling WritableFile::Sync()) before the write
@@ -188,6 +195,7 @@ struct LEVELDB_EXPORT WriteOptions {
   // crash semantics as the "write()" system call.  A DB write
   // with sync==true has similar crash semantics to a "write()"
   // system call followed by "fsync()".
+  size_t separate_threshold ;
   bool sync = false;
 };
 

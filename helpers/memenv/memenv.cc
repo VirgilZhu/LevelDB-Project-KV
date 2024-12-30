@@ -199,17 +199,22 @@ class RandomAccessFileImpl : public RandomAccessFile {
 
 class WritableFileImpl : public WritableFile {
  public:
-  WritableFileImpl(FileState* file) : file_(file) { file_->Ref(); }
+  WritableFileImpl(FileState* file) : file_(file), file_size_(0) { file_->Ref(); }
 
   ~WritableFileImpl() override { file_->Unref(); }
 
-  Status Append(const Slice& data) override { return file_->Append(data); }
+  Status Append(const Slice& data) override {
+    file_size_+= data.size();
+    return file_->Append(data);
+  }
 
   Status Close() override { return Status::OK(); }
   Status Flush() override { return Status::OK(); }
   Status Sync() override { return Status::OK(); }
+  size_t GetSize() override { return file_size_; }
 
  private:
+  int file_size_;
   FileState* file_;
 };
 

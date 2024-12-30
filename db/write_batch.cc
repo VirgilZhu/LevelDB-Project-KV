@@ -9,19 +9,17 @@
 // record :=
 //    kTypeValue varstring varstring         |
 //    kTypeDeletion varstring
+//    kTypeSeparation varstring varstring
 // varstring :=
 //    len: varint32
 //    data: uint8[len]
 
 #include "leveldb/write_batch.h"
 
-#include "db/dbformat.h"
 #include "db/memtable.h"
 #include "db/write_batch_internal.h"
 
 #include "leveldb/db.h"
-
-#include "util/coding.h"
 
 namespace leveldb {
 
@@ -84,13 +82,11 @@ Status WriteBatch::Iterate(Handler* handler) const {
 Status WriteBatch::Iterate(Handler* handler, uint64_t fid,
                            uint64_t offset) const {
   Slice input(rep_);
-  // 整个writebatch 的起始地址
   const char* begin = input.data();
 
   if (input.size() < kHeader) {
     return Status::Corruption("malformed WriteBatch (too small)");
   }
-  // 12个字节，8个字节用来表示sequence，4个字节用来表示 count，移除头
   input.remove_prefix(kHeader);
   Slice key, value;
   int found = 0;
@@ -99,8 +95,6 @@ Status WriteBatch::Iterate(Handler* handler, uint64_t fid,
     const uint64_t kv_offset = input.data() - begin + offset;
     assert(kv_offset > 0);
 
-    // record 记录为  1 个字节 是 kTypeValue ,剩下的字节是 key value
-    // record 记录为  1 个字节 是 kTypeDeletion， 剩下的字节是key
     char tag = input[0];
     input.remove_prefix(1);
     switch (tag) {
@@ -119,20 +113,20 @@ Status WriteBatch::Iterate(Handler* handler, uint64_t fid,
           return Status::Corruption("bad WriteBatch Delete");
         }
         break;
-      // case kTypeSeparate:
-      //   if (GetLengthPrefixedSlice(&input, &key) &&
-      //       GetLengthPrefixedSlice(&input, &(value))) {
-      //     // value = fileNumber + offset + valuesize 采用变长编码的方式
-      //     std::string dest;
-      //     PutVarint64(&dest, fid);
-      //     PutVarint64(&dest, kv_offset);
-      //     PutVarint64(&dest, value.size());
-      //     Slice value_offset(dest);
-      //     handler->Put(key, value_offset, kTypeSeparate);
-      //   } else {
-      //     return Status::Corruption("bad WriteBatch Put");
-      //   }
-      //   break;
+      case kTypeSeparation:
+        if (GetLengthPrefixedSlice(&input, &key) &&
+             GetLengthPrefixedSlice(&input, &(value))) {
+          // value = fileNumber + offset + valuesize 采用变长编码的方式
+          std::string dest;
+          PutVarint64(&dest, fid);
+          PutVarint64(&dest, kv_offset);
+          PutVarint64(&dest, value.size());
+          Slice value_offset(dest);
+          handler->Put(key, value_offset, kTypeSeparation);
+        } else {
+          return Status::Corruption("WriteBatch Put error");
+        }
+        break;
       default:
         return Status::Corruption("unknown WriteBatch tag");
     }
@@ -143,6 +137,7 @@ Status WriteBatch::Iterate(Handler* handler, uint64_t fid,
     return Status::OK();
   }
 }
+
 int WriteBatchInternal::Count(const WriteBatch* b) {
   return DecodeFixed32(b->rep_.data() + 8);
 }
@@ -161,7 +156,11 @@ void WriteBatchInternal::SetSequence(WriteBatch* b, SequenceNumber seq) {
 
 void WriteBatch::Put(const Slice& key, const Slice& value) {
   WriteBatchInternal::SetCount(this, WriteBatchInternal::Count(this) + 1);
-  rep_.push_back(static_cast<char>(kTypeValue));
+  if (value.size() >= separate_threshold_) {
+    rep_.push_back(static_cast<char>(kTypeSeparation));
+  } else {
+    rep_.push_back(static_cast<char>(kTypeValue));
+  }
   PutLengthPrefixedSlice(&rep_, key);
   PutLengthPrefixedSlice(&rep_, value);
 }
@@ -182,8 +181,8 @@ class MemTableInserter : public WriteBatch::Handler {
   SequenceNumber sequence_;
   MemTable* mem_;
 
-  void Put(const Slice& key, const Slice& value) override {
-    mem_->Add(sequence_, kTypeValue, key, value);
+  void Put(const Slice& key, const Slice& value, ValueType type = kTypeValue) override {
+    mem_->Add(sequence_, type, key, value);
     sequence_++;
   }
   void Delete(const Slice& key) override {
@@ -203,7 +202,6 @@ Status WriteBatchInternal::InsertInto(const WriteBatch* b, MemTable* memtable) {
 Status WriteBatchInternal::InsertInto(const WriteBatch* b, MemTable* memtable,
                                       uint64_t fid, size_t offset) {
   MemTableInserter inserter;
-  // 一批 writeBatch中只有一个sequence，公用的，后续会自加。
   inserter.sequence_ = WriteBatchInternal::Sequence(b);
   inserter.mem_ = memtable;
   return b->Iterate(&inserter, fid, offset);

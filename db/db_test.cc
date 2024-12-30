@@ -190,6 +190,7 @@ class SpecialEnv : public EnvWrapper {
         }
         return base_->Sync();
       }
+      size_t GetSize() { return base_->GetSize(); }
     };
     class ManifestFile : public WritableFile {
      private:
@@ -215,6 +216,7 @@ class SpecialEnv : public EnvWrapper {
           return base_->Sync();
         }
       }
+      size_t GetSize() { return base_->GetSize(); }
     };
 
     if (non_writable_.load(std::memory_order_acquire)) {

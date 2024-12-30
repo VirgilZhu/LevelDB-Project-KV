@@ -5,7 +5,6 @@
 #include "leveldb/env.h"
 
 #include "util/coding.h"
-#include "util/crc32c.h"
 
 namespace leveldb {
 namespace log {
@@ -13,8 +12,6 @@ VlogWriter::VlogWriter(WritableFile* dest) : dest_(dest), head_(0) {}
 
 VlogWriter::VlogWriter(WritableFile* dest, uint64_t dest_length)
     : dest_(dest), head_(0) {}
-
-VlogWriter::~VlogWriter() = default;
 
 Status VlogWriter::AddRecord(const Slice& slice, uint64_t& offset) {
   const char* ptr = slice.data();

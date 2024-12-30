@@ -28,7 +28,7 @@ class VlogWriter {
   VlogWriter(const VlogWriter&) = delete;
   VlogWriter& operator=(const VlogWriter&) = delete;
 
-  VlogWriter();
+  ~VlogWriter() = default;
 
   Status AddRecord(const Slice& slice, uint64_t& offset);
 

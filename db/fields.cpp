@@ -171,7 +171,7 @@ std::string& Fields::operator[](const std::string& field_name) {
 }
 
 /* 通过若干个字段查询 Key */
- std::vector<std::string> Fields::FindKeysByFields(leveldb::DB* db, const FieldArray& fields) {
+std::vector<std::string> Fields::FindKeysByFields(leveldb::DB* db, const FieldArray& fields) {
     Fields to_fields = Fields(fields);
     to_fields.Fields::SortFields();
     FieldArray search_fields_ = to_fields.fields_;
@@ -199,7 +199,7 @@ std::string& Fields::operator[](const std::string& field_name) {
     delete it;
 
     return find_keys;
- }
+}
 
 //std::vector<std::string> Fields::FindKeysByFields(leveldb::DB* db, const FieldArray& fields) {
 //    Fields to_fields = Fields(fields);

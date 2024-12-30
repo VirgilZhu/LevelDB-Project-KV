@@ -164,6 +164,7 @@ class LogTest : public testing::Test {
     Status Close() override { return Status::OK(); }
     Status Flush() override { return Status::OK(); }
     Status Sync() override { return Status::OK(); }
+    size_t GetSize() override { return 0; }
     Status Append(const Slice& slice) override {
       contents_.append(slice.data(), slice.size());
       return Status::OK();

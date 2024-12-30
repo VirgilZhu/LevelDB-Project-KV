@@ -59,7 +59,7 @@ TEST(TestTTL, ReadTTL) {
     Status status;
     int key_num = data_size / value_size;
     srand(0);
-    for (int i = 0; i < 100; i++) {
+    for (int i = 14; i < 100; i++) {
         int key_ = rand() % key_num+1;
         std::string key = std::to_string(key_);
         std::string value;

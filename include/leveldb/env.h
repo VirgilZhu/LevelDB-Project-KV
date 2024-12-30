@@ -287,6 +287,7 @@ class LEVELDB_EXPORT WritableFile {
   virtual Status Close() = 0;
   virtual Status Flush() = 0;
   virtual Status Sync() = 0;
+  virtual size_t GetSize() = 0;
 };
 
 // An interface for writing log messages.
