@@ -148,7 +148,7 @@ struct LEVELDB_EXPORT Options {
 
   /* 需要再研究下 */
   // value log 的文件大小
-  uint64_t max_value_log_size = 500 * 1024 * 1024;
+  uint64_t max_value_log_size = 16 * 1024 * 1024;
   // gc 的回收阈值。
   uint64_t garbage_collection_threshold = max_value_log_size / 4;
   // gc 后台回收时候重新put的时候，默认的kv分离的值。
@@ -176,7 +176,9 @@ struct LEVELDB_EXPORT ReadOptions {
 
 // Options that control write operations
 struct LEVELDB_EXPORT WriteOptions {
-  WriteOptions() = default;
+  explicit WriteOptions(size_t separateThreshold = 16)
+      : separate_threshold(separateThreshold) {}
+//  WriteOptions() = default;
 
   // If true, the write will be flushed from the operating system
   // buffer cache (by calling WritableFile::Sync()) before the write
@@ -192,6 +194,7 @@ struct LEVELDB_EXPORT WriteOptions {
   // crash semantics as the "write()" system call.  A DB write
   // with sync==true has similar crash semantics to a "write()"
   // system call followed by "fsync()".
+  size_t separate_threshold ;
   bool sync = false;
 };
 

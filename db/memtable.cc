@@ -126,9 +126,16 @@ bool MemTable::Get(const LookupKey& key, std::string* value, Status* s) {
           value->assign(v.data(), v.size());
           return true;
         }
-        case kTypeDeletion:
+        case kTypeDeletion: {
           *s = Status::NotFound(Slice());
           return true;
+        }
+        case kTypeSeparation: {
+          Slice v = GetLengthPrefixedSlice(key_ptr + key_length);
+          value->assign(v.data(), v.size());
+          s->SetSeparated();
+          return true;
+        }
       }
     }
   }

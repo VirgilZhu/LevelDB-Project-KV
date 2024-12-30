@@ -146,11 +146,14 @@ DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
       has_imm_(false),
       logfile_(nullptr),
       logfile_number_(0),
-      log_(nullptr),
       seed_(0),
       tmp_batch_(new WriteBatch),
       background_compaction_scheduled_(false),
       manual_compaction_(nullptr),
+
+      vlog_(nullptr),
+      vlog_kv_numbers_(0),
+
       versions_(new VersionSet(dbname_, &options_, table_cache_,
                                &internal_comparator_)) {}
 
@@ -171,7 +174,7 @@ DBImpl::~DBImpl() {
   if (mem_ != nullptr) mem_->Unref();
   if (imm_ != nullptr) imm_->Unref();
   delete tmp_batch_;
-  delete log_;
+  delete vlog_;
   delete logfile_;
   delete table_cache_;
 
@@ -476,13 +479,13 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
   // See if we should keep reusing the last log file.
   if (status.ok() && options_.reuse_logs && last_log && compactions == 0) {
     assert(logfile_ == nullptr);
-    assert(log_ == nullptr);
+    assert(vlog_ == nullptr);
     assert(mem_ == nullptr);
     uint64_t lfile_size;
     if (env_->GetFileSize(fname, &lfile_size).ok() &&
         env_->NewAppendableFile(fname, &logfile_).ok()) {
       Log(options_.info_log, "Reusing old log %s \n", fname.c_str());
-      log_ = new log::Writer(logfile_, lfile_size);
+      vlog_ = new log::VlogWriter(logfile_, lfile_size);
       logfile_number_ = log_number;
       if (mem != nullptr) {
         mem_ = mem;
@@ -1313,6 +1316,9 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
     WriteBatchInternal::SetSequence(write_batch, last_sequence + 1);
     last_sequence += WriteBatchInternal::Count(write_batch);
 
+    /* TODO */
+    vlog_kv_numbers_ += WriteBatchInternal::Count(write_batch);
+
     // Add to log and apply to memtable.  We can release the lock
     // during this phase since &w is currently responsible for logging
     // and protects against concurrent loggers and concurrent writes
@@ -1423,6 +1429,23 @@ Status DBImpl::MakeRoomForWrite(bool force) {
   assert(!writers_.empty());
   bool allow_delay = !force;
   Status s;
+
+  if (logfile_->GetSize() > options_.max_value_log_size) {
+    uint64_t new_log_number = versions_->NewFileNumber();
+    WritableFile* lfile = nullptr;
+    s = env_->NewWritableFile(LogFileName(dbname_, new_log_number), &lfile);
+    if (!s.ok()) {
+      versions_->ReuseFileNumber(new_log_number);
+    }
+//    gc_management_->WriteFileMap(logfile_number_, vlog_kv_numbers_, logfile_->GetSize());
+    vlog_kv_numbers_ = 0;
+    delete vlog_;
+    delete logfile_;
+    logfile_ = lfile;
+    logfile_number_ = new_log_number;
+    vlog_ = new log::VlogWriter(lfile);
+  }
+
   while (true) {
     if (!bg_error_.ok()) {
       // Yield previous error
@@ -1456,33 +1479,9 @@ Status DBImpl::MakeRoomForWrite(bool force) {
     } else {
       // Attempt to switch to a new memtable and trigger compaction of old
       assert(versions_->PrevLogNumber() == 0);
-      uint64_t new_log_number = versions_->NewFileNumber();
-      WritableFile* lfile = nullptr;
-      s = env_->NewWritableFile(LogFileName(dbname_, new_log_number), &lfile);
-      if (!s.ok()) {
-        // Avoid chewing through file number space in a tight loop.
-        versions_->ReuseFileNumber(new_log_number);
-        break;
-      }
 
-      delete log_;
+      mem_->SetLogFileNumber(logfile_number_);
 
-      s = logfile_->Close();
-      if (!s.ok()) {
-        // We may have lost some data written to the previous log file.
-        // Switch to the new log file anyway, but record as a background
-        // error so we do not attempt any more writes.
-        //
-        // We could perhaps attempt to save the memtable corresponding
-        // to log file and suppress the error if that works, but that
-        // would add more complexity in a critical code path.
-        RecordBackgroundError(s);
-      }
-      delete logfile_;
-
-      logfile_ = lfile;
-      logfile_number_ = new_log_number;
-      log_ = new log::Writer(lfile);
       imm_ = mem_;
       has_imm_.store(true, std::memory_order_release);
       mem_ = new MemTable(internal_comparator_);
@@ -1577,7 +1576,7 @@ void DBImpl::GetApproximateSizes(const Range* range, int n, uint64_t* sizes) {
 // Default implementations of convenience methods that subclasses of DB
 // can call if they wish
 Status DB::Put(const WriteOptions& opt, const Slice& key, const Slice& value) {
-  WriteBatch batch;
+  WriteBatch batch(opt.separate_threshold);
   batch.Put(key, value);
   return Write(opt, &batch);
 }
@@ -1609,7 +1608,7 @@ Status DB::Open(const Options& options, const std::string& dbname, DB** dbptr) {
       edit.SetLogNumber(new_log_number);
       impl->logfile_ = lfile;
       impl->logfile_number_ = new_log_number;
-      impl->log_ = new log::Writer(lfile);
+      impl->vlog_ = new log::VlogWriter(lfile);
       impl->mem_ = new MemTable(impl->internal_comparator_);
       impl->mem_->Ref();
     }

@@ -279,6 +279,7 @@ class PosixWritableFile final : public WritableFile {
   PosixWritableFile(std::string filename, int fd)
       : pos_(0),
         fd_(fd),
+        file_size_(0),
         is_manifest_(IsManifest(filename)),
         filename_(std::move(filename)),
         dirname_(Dirname(filename_)) {}
@@ -290,9 +291,13 @@ class PosixWritableFile final : public WritableFile {
     }
   }
 
+  size_t GetSize() { return file_size_; }
+
   Status Append(const Slice& data) override {
     size_t write_size = data.size();
     const char* write_data = data.data();
+
+    file_size_ += write_size;
 
     // Fit as much as possible into buffer.
     size_t copy_size = std::min(write_size, kWritableFileBufferSize - pos_);
@@ -458,6 +463,8 @@ class PosixWritableFile final : public WritableFile {
   char buf_[kWritableFileBufferSize];
   size_t pos_;
   int fd_;
+
+  int file_size_;
 
   const bool is_manifest_;  // True if the file's name starts with MANIFEST.
   const std::string filename_;

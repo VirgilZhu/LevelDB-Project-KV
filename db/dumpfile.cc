@@ -74,7 +74,7 @@ Status PrintLogContents(Env* env, const std::string& fname,
 // Called on every item found in a WriteBatch.
 class WriteBatchItemPrinter : public WriteBatch::Handler {
  public:
-  void Put(const Slice& key, const Slice& value) override {
+  void Put(const Slice& key, const Slice& value, ValueType type = kTypeValue) override {
     std::string r = "  put '";
     AppendEscapedStringTo(&r, key);
     r += "' '";
@@ -188,6 +188,8 @@ Status DumpTable(Env* env, const std::string& fname, WritableFile* dst) {
       if (key.type == kTypeDeletion) {
         r += "del";
       } else if (key.type == kTypeValue) {
+        r += "val";
+      } else if (key.type == kTypeSeparation) {
         r += "val";
       } else {
         AppendNumberTo(&r, key.type);

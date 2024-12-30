@@ -62,6 +62,10 @@ class MemTable {
   // Else, return false.
   bool Get(const LookupKey& key, std::string* value, Status* s);
 
+  uint64_t GetTailSequence() { return tail_sequence_; }
+  uint64_t GetLogFileNumber() { return log_file_number_; }
+  uint64_t SetLogFileNumber(uint64_t fid) { log_file_number_ = fid; }
+
  private:
   friend class MemTableIterator;
   friend class MemTableBackwardIterator;
@@ -75,6 +79,9 @@ class MemTable {
   typedef SkipList<const char*, KeyComparator> Table;
 
   ~MemTable();  // Private since only Unref() should be used to delete it
+
+  uint64_t tail_sequence_;
+  uint64_t log_file_number_;
 
   KeyComparator comparator_;
   int refs_;

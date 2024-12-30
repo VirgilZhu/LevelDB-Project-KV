@@ -114,6 +114,7 @@ class TestWritableFile : public WritableFile {
   Status Close() override;
   Status Flush() override;
   Status Sync() override;
+  size_t GetSize() override { return 0; };
 
  private:
   FileState state_;
