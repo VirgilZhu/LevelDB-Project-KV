@@ -809,6 +809,12 @@ Status VersionSet::LogAndApply(VersionEdit* edit, port::Mutex* mu) {
   edit->SetNextFile(next_file_number_);
   edit->SetLastSequence(last_sequence_);
 
+    // TODO begin
+  if( SaveImmLastSequence() ){
+      edit->SetImmLastSequence(imm_last_sequence_,imm_log_file_number_);
+  }
+  // TODO end
+
   Version* v = new Version(this);
   {
     Builder builder(this, current_);
@@ -912,6 +918,13 @@ Status VersionSet::Recover(bool* save_manifest) {
   bool have_prev_log_number = false;
   bool have_next_file = false;
   bool have_last_sequence = false;
+
+  // TODO begin
+  bool have_imm_last_sequence = false;
+  uint64_t imm_last_sequence = 0;
+  uint64_t imm_log_file_number = 0;
+  // TODO end
+
   uint64_t next_file = 0;
   uint64_t last_sequence = 0;
   uint64_t log_number = 0;
@@ -962,6 +975,13 @@ Status VersionSet::Recover(bool* save_manifest) {
         last_sequence = edit.last_sequence_;
         have_last_sequence = true;
       }
+      // TODO begin
+      if (edit.has_imm_last_sequence_) {
+          imm_last_sequence = edit.imm_last_sequence_;
+          imm_log_file_number = edit.imm_log_file_number_;
+          have_imm_last_sequence = true;
+      }
+      // TODO end
     }
   }
   delete file;
@@ -995,6 +1015,10 @@ Status VersionSet::Recover(bool* save_manifest) {
     last_sequence_ = last_sequence;
     log_number_ = log_number;
     prev_log_number_ = prev_log_number;
+    // TODO begin
+    imm_last_sequence_ = imm_last_sequence;
+    imm_log_file_number_ = imm_log_file_number;
+    // TODO end
 
     // See if we can reuse the existing MANIFEST file.
     if (ReuseManifest(dscname, current)) {
@@ -1411,7 +1435,7 @@ void VersionSet::SetupOtherInputs(Compaction* c) {
 
   current_->GetOverlappingInputs(level + 1, &smallest, &largest,
                                  &c->inputs_[1]);
-  AddBoundaryInputs(icmp_, current_->files_[level + 1], &c->inputs_[1]);
+  // AddBoundaryInputs(icmp_, current_->files_[level + 1], &c->inputs_[1]);
 
   // Get entire range covered by compaction
   InternalKey all_start, all_limit;
@@ -1434,7 +1458,7 @@ void VersionSet::SetupOtherInputs(Compaction* c) {
       std::vector<FileMetaData*> expanded1;
       current_->GetOverlappingInputs(level + 1, &new_start, &new_limit,
                                      &expanded1);
-      AddBoundaryInputs(icmp_, current_->files_[level + 1], &expanded1);
+      // AddBoundaryInputs(icmp_, current_->files_[level + 1], &expanded1);
       if (expanded1.size() == c->inputs_[1].size()) {
         Log(options_->info_log,
             "Expanding@%d %d+%d (%ld+%ld bytes) to %d+%d (%ld+%ld bytes)\n",

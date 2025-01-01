@@ -354,11 +354,20 @@ Status DBImpl::Recover(VersionEdit* edit, bool* save_manifest) {
   uint64_t number;
   FileType type;
   std::vector<uint64_t> logs;
+  uint64_t max_number = 0;
   for (size_t i = 0; i < filenames.size(); i++) {
     if (ParseFileName(filenames[i], &number, &type)) {
+      // expected.erase(number);
+      // if (type == kLogFile && ((number >= min_log) || (number == prev_log)))
+      //   logs.push_back(number);
+      //TODO begin
+      if(number > max_number) max_number = number;
+      //删除存在的文件
       expected.erase(number);
-      if (type == kLogFile && ((number >= min_log) || (number == prev_log)))
+      //存储当前已有的日志文件
+      if (type == kLogFile)
         logs.push_back(number);
+      //TODO end
     }
   }
   if (!expected.empty()) {
@@ -370,18 +379,34 @@ Status DBImpl::Recover(VersionEdit* edit, bool* save_manifest) {
 
   // Recover in the order in which the logs were generated
   std::sort(logs.begin(), logs.end());
-  for (size_t i = 0; i < logs.size(); i++) {
-    s = RecoverLogFile(logs[i], (i == logs.size() - 1), save_manifest, edit,
-                       &max_sequence);
-    if (!s.ok()) {
-      return s;
-    }
+  // for (size_t i = 0; i < logs.size(); i++) {
+  //   s = RecoverLogFile(logs[i], (i == logs.size() - 1), save_manifest, edit,
+  //                      &max_sequence);
+  //   if (!s.ok()) {
+  //     return s;
+  //   }
 
-    // The previous incarnation may not have written any MANIFEST
-    // records after allocating this log number.  So we manually
-    // update the file number allocation counter in VersionSet.
-    versions_->MarkFileNumberUsed(logs[i]);
+  //   // The previous incarnation may not have written any MANIFEST
+  //   // records after allocating this log number.  So we manually
+  //   // update the file number allocation counter in VersionSet.
+  //   versions_->MarkFileNumberUsed(logs[i]);
+  // }
+  //TODO begin
+  bool found_sequence_pos = false;
+  for(int i = 0; i < logs.size(); ++i){
+      if( logs[i] < versions_->ImmLogFileNumber() ) {
+          continue;
+      }
+      Log(options_.info_log, "RecoverLogFile old log: %06llu \n", static_cast<unsigned long long>(logs[i]));
+      //重做日志操作
+      s = RecoverLogFile(logs[i], (i == logs.size() - 1), save_manifest, edit,
+                         &max_sequence, found_sequence_pos);
+      if (!s.ok()) {
+          return s;
+      }
   }
+    versions_->MarkFileNumberUsed(max_number);
+  //TODO end
 
   if (versions_->LastSequence() < max_sequence) {
     versions_->SetLastSequence(max_sequence);
@@ -392,7 +417,8 @@ Status DBImpl::Recover(VersionEdit* edit, bool* save_manifest) {
 
 Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
                               bool* save_manifest, VersionEdit* edit,
-                              SequenceNumber* max_sequence) {
+                              SequenceNumber* max_sequence,
+                              bool& found_sequence_pos) {
   struct LogReporter : public log::Reader::Reporter {
     Env* env;
     Logger* info_log;
@@ -435,14 +461,45 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
   std::string scratch;
   Slice record;
   WriteBatch batch;
+  uint64_t record_offset = 0;
   int compactions = 0;
   MemTable* mem = nullptr;
+  // TODO begin
+  uint64_t imm_last_sequence = versions_->ImmLastSequence();
+  // TODO end
   while (reader.ReadRecord(&record, &scratch) && status.ok()) {
-    if (record.size() < 12) {
+    // if (record.size() < 12) {
+    if (record.size() < 20) {
       reporter.Corruption(record.size(),
                           Status::Corruption("log record too small"));
       continue;
     }
+    // TODO begin 如果 imm_last_sequence == 0 的话，那么整个说明没有进行一次imm 转sst的情况，
+    //  所有的log文件都需要进行回收，因为也有可能是manifest出问题了。
+    // 回收编号最大的log文件即可。note
+      if( !found_sequence_pos  && imm_last_sequence != 0 ){
+        Slice tmp = record;
+        tmp.remove_prefix(8);
+        uint64_t seq = DecodeFixed64(tmp.data());
+        tmp.remove_prefix(8);
+        uint64_t kv_numbers = DecodeFixed32(tmp.data());
+
+        // 解析出来的seq不符合要求跳过。恢复时定位seq位置时候一定是要大于或者等于 versions_->LastSequence()
+        if( ( seq + kv_numbers - 1 ) < imm_last_sequence  ) {
+            record_offset += record.size();
+            continue;
+        }else if( ( seq + kv_numbers - 1 ) == imm_last_sequence ){
+            // open db 落盘过sst，再一次打开db就是这个情况。
+            found_sequence_pos = true;
+            record_offset += record.size();
+            continue;
+        }else { // open db 之后没有落盘过sst，然后数据库就关闭了，第二次又恢复的时候就是这个情况
+            found_sequence_pos = true;
+        }
+    }
+    // 去除头部信息 crc 和length
+    record.remove_prefix(log::vHeaderSize);
+    // TODO end
     WriteBatchInternal::SetContents(&batch, record);
 
     if (mem == nullptr) {
@@ -463,6 +520,12 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
     if (mem->ApproximateMemoryUsage() > options_.write_buffer_size) {
       compactions++;
       *save_manifest = true;
+
+      // TODO begin mem 落盘修改 imm_last_sequence，版本恢复
+      versions_->SetImmLastSequence(mem->GetTailSequence());
+      versions_->SetImmLogFileNumber(log_number);
+      // TODO end
+
       status = WriteLevel0Table(mem, edit, nullptr);
       mem->Unref();
       mem = nullptr;
@@ -501,6 +564,11 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
   if (mem != nullptr) {
     // mem did not get reused; compact it.
     if (status.ok()) {
+
+      // TODO begin mem 落盘修改 imm_last_sequence，版本恢复
+      versions_->SetImmLastSequence(mem->GetTailSequence());
+      versions_->SetImmLogFileNumber(log_number);
+      // TODO end
       *save_manifest = true;
       status = WriteLevel0Table(mem, edit, nullptr);
     }
@@ -573,7 +641,15 @@ void DBImpl::CompactMemTable() {
   if (s.ok()) {
     edit.SetPrevLogNumber(0);
     edit.SetLogNumber(logfile_number_);  // Earlier logs no longer needed
+    // s = versions_->LogAndApply(&edit, &mutex_);
+    // TODO begin
+    //构建新版本，并将其加入到 version_当中
+    versions_->StartImmLastSequence(true);
+    versions_->SetImmLastSequence(imm_->GetTailSequence());
+    versions_->SetImmLogFileNumber(imm_->GetLogFileNumber());
     s = versions_->LogAndApply(&edit, &mutex_);
+    versions_->StartImmLastSequence(false);
+    // TODO end
   }
 
   if (s.ok()) {
@@ -764,6 +840,12 @@ void DBImpl::BackgroundCompaction() {
     if (!status.ok()) {
       RecordBackgroundError(status);
     }
+    // TODO begin conmpact 后需要考虑是否将 value log 文件进行 gc回收，如果需要将其加入到回收任务队列中。
+    // 不进行后台的gc回收，那么也不更新待分配sequence的log了。
+    if(!finish_back_garbage_collection_){
+        garbage_colletion_management_->UpdateQueue(versions_->ImmLogFileNumber() );
+    }
+    // TODO end
     CleanupCompaction(compact);
     c->ReleaseInputs();
     RemoveObsoleteFiles();
@@ -1599,6 +1681,13 @@ Status DB::Open(const Options& options, const std::string& dbname, DB** dbptr) {
   // Recover handles create_if_missing, error_if_exists
   bool save_manifest = false;
   Status s = impl->Recover(&edit, &save_manifest);
+
+  // TODO begin
+  std::vector<uint64_t> logs;
+  s = impl->GetAllValueLog(dbname,logs);
+  sort(logs.begin(),logs.end());
+  // TODO end
+
   if (s.ok() && impl->mem_ == nullptr) {
     // Create new log and a corresponding memtable.
     uint64_t new_log_number = impl->versions_->NewFileNumber();
@@ -1617,12 +1706,36 @@ Status DB::Open(const Options& options, const std::string& dbname, DB** dbptr) {
   if (s.ok() && save_manifest) {
     edit.SetPrevLogNumber(0);  // No older logs needed after recovery.
     edit.SetLogNumber(impl->logfile_number_);
+    // s = impl->versions_->LogAndApply(&edit, &impl->mutex_);
+    // TODO begin 这里也要设置 imm_last_sequence 设置到新的maifest当中，不然下次就没有值了。
+    // 就是全盘恢复了。
+    impl->versions_->StartImmLastSequence(true);
     s = impl->versions_->LogAndApply(&edit, &impl->mutex_);
+    impl->versions_->StartImmLastSequence(false);
+    // TODO end
   }
   if (s.ok()) {
     impl->RemoveObsoleteFiles();
     impl->MaybeScheduleCompaction();
   }
+  // TODO beigin 开始全盘的回收。
+
+  if( s.ok() && impl->options_.start_garbage_collection ){
+      if( s.ok() ){
+          int size = logs.size();
+          for( int i = 0; i < size ; i++){
+              uint64_t fid = logs[i];
+              uint64_t next_sequence = impl->versions_->LastSequence() + 1;
+              std::cout<<" collection file : "<<fid<<std::endl;
+              impl->mutex_.Unlock();
+              Status stmp = impl->CollectionValueLog( fid,next_sequence );
+              impl->mutex_.Lock();
+              if( !stmp.ok() ) s = stmp;
+              impl->versions_->SetLastSequence(next_sequence - 1);
+          }
+      }
+  }
+  // TODO end
   impl->mutex_.Unlock();
   if (s.ok()) {
     assert(impl->mem_ != nullptr);

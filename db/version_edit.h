@@ -26,6 +26,20 @@ struct FileMetaData {
   InternalKey largest;   // Largest internal key served by table
 };
 
+// TODO begin
+struct LogMetaData {
+    LogMetaData() : refs(0), allowed_seeks(1 << 30), file_size(0) {}
+
+    int refs;            // 引用计数
+    // Seeks allowed until compaction; 当该值为0时,意味着需要进行compaction操作了; 变量allowed_seeks的值在sstable文件加入到version时确定
+    int allowed_seeks;
+    uint64_t number;       //文件名相关;sstable文件的名字是 number.ldb
+    uint64_t file_size;    // File size in bytes  文件大小
+    InternalKey smallest;  // Smallest internal key served by table 最小的key
+    InternalKey largest;   // Largest internal key served by table 最大的key
+};
+// TODO end
+
 class VersionEdit {
  public:
   VersionEdit() { Clear(); }
@@ -53,6 +67,15 @@ class VersionEdit {
     has_last_sequence_ = true;
     last_sequence_ = seq;
   }
+
+  // TODO begin
+  //设置序列号 imm_last_sequence_ imm 转 sst的时候用
+  void SetImmLastSequence(SequenceNumber seq,uint64_t fid) {
+      has_imm_last_sequence_ = true;
+      imm_last_sequence_ = seq;
+      imm_log_file_number_ = fid;
+  }
+  // TODO end
   void SetCompactPointer(int level, const InternalKey& key) {
     compact_pointers_.push_back(std::make_pair(level, key));
   }
@@ -95,6 +118,15 @@ class VersionEdit {
   bool has_prev_log_number_;
   bool has_next_file_number_;
   bool has_last_sequence_;
+
+  // TODO begin
+  // 是否包含 imm_last_sequence_
+  bool has_imm_last_sequence_;
+  // 恢复log的时候 用来定位memtable 和 immemtabl中的位置
+  SequenceNumber imm_last_sequence_;
+  // imm_last_sequence 所处在的log文件
+  uint64_t imm_log_file_number_;
+  // TODO end
 
   std::vector<std::pair<int, InternalKey>> compact_pointers_;
   DeletedFileSet deleted_files_;
