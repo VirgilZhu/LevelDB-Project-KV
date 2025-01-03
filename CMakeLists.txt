@@ -550,3 +550,9 @@ add_executable(kv_test
         test/kv_test.cc
 )
 target_link_libraries(kv_test PRIVATE leveldb gtest)
+
+add_executable(bench_test
+        "${PROJECT_SOURCE_DIR}/test/bench_test.cc"
+        test/bench_test.cc
+)
+target_link_libraries(bench_test PRIVATE leveldb gtest)
