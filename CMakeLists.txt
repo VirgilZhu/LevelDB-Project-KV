@@ -121,7 +121,9 @@ add_library(leveldb
         db/vlog_reader.h
         db/vlog_reader.cc
         db/vlog_writer.h
-        db/vlog_writer.cc)
+        db/vlog_writer.cc
+        db/kv_separate_management.cc
+        db/kv_separate_management.h)
 target_sources(leveldb
   PRIVATE
     "${PROJECT_BINARY_DIR}/${LEVELDB_PORT_CONFIG_DIR}/port_config.h"
@@ -548,11 +550,15 @@ target_link_libraries(value_field_test PRIVATE leveldb gtest)
 add_executable(kv_test
         "${PROJECT_SOURCE_DIR}/test/kv_test.cc"
         test/kv_test.cc
+        db/kv_separate_management.cc
+        db/kv_separate_management.h
 )
 target_link_libraries(kv_test PRIVATE leveldb gtest)
 
 add_executable(bench_test
         "${PROJECT_SOURCE_DIR}/test/bench_test.cc"
         test/bench_test.cc
+        db/kv_separate_management.cc
+        db/kv_separate_management.h
 )
 target_link_libraries(bench_test PRIVATE leveldb gtest)

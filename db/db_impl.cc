@@ -11,6 +11,7 @@
 #include <set>
 #include <string>
 #include <vector>
+#include <iostream>
 
 #include "fields.h"
 #include "db/builder.h"
@@ -141,6 +142,9 @@ DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
       db_lock_(nullptr),
       shutting_down_(false),
       background_work_finished_signal_(&mutex_),
+
+      garbage_collection_work_signal_(&mutex_),
+
       mem_(nullptr),
       imm_(nullptr),
       has_imm_(false),
@@ -148,12 +152,15 @@ DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
       logfile_number_(0),
       seed_(0),
       tmp_batch_(new WriteBatch),
+
       background_compaction_scheduled_(false),
+      background_GarbageCollection_scheduled_(false),
+      finish_back_garbage_collection_(false),
       manual_compaction_(nullptr),
 
       vlog_(nullptr),
       vlog_kv_numbers_(0),
-
+      garbage_collection_management_(new SeparateManagement(raw_options.garbage_collection_threshold) ),
       versions_(new VersionSet(dbname_, &options_, table_cache_,
                                &internal_comparator_)) {}
 
@@ -163,6 +170,9 @@ DBImpl::~DBImpl() {
   shutting_down_.store(true, std::memory_order_release);
   while (background_compaction_scheduled_) {
     background_work_finished_signal_.Wait();
+  }
+  while(background_GarbageCollection_scheduled_){
+    garbage_collection_work_signal_.Wait();
   }
   mutex_.Unlock();
 
@@ -745,6 +755,9 @@ void DBImpl::RecordBackgroundError(const Status& s) {
   if (bg_error_.ok()) {
     bg_error_ = s;
     background_work_finished_signal_.SignalAll();
+    // TODO begin
+    // garbage_collection_work_signal_.SignalAll();
+    // TODO end
   }
 }
 
@@ -764,6 +777,204 @@ void DBImpl::MaybeScheduleCompaction() {
     env_->Schedule(&DBImpl::BGWork, this);
   }
 }
+
+// TODO begin 调度垃圾回收的相关的函数 不需要锁，仅仅是追加的方式。
+// 获得db库中所有的log文件，将其放入到vector中
+Status DBImpl::GetAllValueLog(std::string dir,std::vector<uint64_t>& logs){
+  logs.clear();
+  std::vector<std::string> filenames;
+  // 获取文件列表
+  Status s = env_->GetChildren(dir, &filenames);
+  if (!s.ok()) {
+    return s;
+  }
+  uint64_t number;
+  FileType type;
+  for (size_t i = 0; i < filenames.size(); i++) {
+    if (ParseFileName(filenames[i], &number, &type)) {
+      //存储当前已有的日志文件
+      if (type == kLogFile)
+        logs.push_back(number);
+    }
+  }
+  return s;
+}
+
+// 手动进行离线回收、
+// 1. 如果管理类 separate_management中有的话，那么就按照这个类中的map的信息进行回收，主要用于删除快照后的一个回收
+// 2. 对db目录下的文件所有的文件进行回收，主要针对于open的时候。主线程中使用。
+// 返回的 status 如果是不ok的说明回收的时候出现一个log文件是有问题的。
+Status DBImpl::OutLineGarbageCollection(){
+  MutexLock l(&mutex_);
+  Status s;
+  // map 中保存了文件的信息，那么就采用map来指导回收，否则对db下所有的log文件进行回收
+  if (!garbage_collection_management_->EmptyMap()) {
+    garbage_collection_management_->CollectionMap();
+    uint64_t last_sequence = versions_->LastSequence();
+    garbage_collection_management_->ConvertQueue(last_sequence);
+    versions_->SetLastSequence(last_sequence);
+    MaybeScheduleGarbageCollection();
+    return Status();
+  }
+  return s;
+}
+
+// 读取回收一个log文件，不加锁
+// next_sequence : 只有在open的时候才会返回需要修改的值，在线gc是不需要的。
+// next_sequence 指的是第一个没有用到的sequence
+Status DBImpl::CollectionValueLog(uint64_t fid, uint64_t& next_sequence) {
+
+  struct LogReporter : public log::VlogReader::Reporter {
+    Status* status;
+    void Corruption(size_t bytes, const Status& s) override {
+      if (this->status->ok()) *this->status = s;
+    }
+  };
+  LogReporter report;
+  std::string logName = LogFileName(dbname_, fid);
+  SequentialFile* lfile;
+  Status status = env_->NewSequentialFile(logName, &lfile);
+  if (!status.ok()) {
+    Log(options_.info_log, "Garbage Collection Open file error: %s", status.ToString().c_str());
+    return status;
+  }
+  log::VlogReader reader(lfile, &report);
+
+  Slice record;
+  std::string scratch;
+  // record_offset 每条record 相对文本开头的偏移。
+  uint64_t record_offset = 0;
+  uint64_t size_offset = 0;
+  WriteOptions opt(options_.background_garbage_collection_separate_);
+  WriteBatch batch(opt.separate_threshold);
+  batch.setGarbageColletion(true);
+  WriteBatchInternal::SetSequence(&batch, next_sequence);
+  while( reader.ReadRecord(&record,&scratch) ){
+    const char* head_record_ptr = record.data();
+    record.remove_prefix(log::vHeaderSize + log::wHeaderSize);
+
+    while( record.size() > 0 ){
+      const char* head_kv_ptr = record.data();
+      // kv对在文本中的偏移
+      uint64_t kv_offset = record_offset + head_kv_ptr - head_record_ptr;
+      ValueType type = static_cast<ValueType>(record[0]);
+      record.remove_prefix(1);
+      Slice key;
+      Slice value;
+      std::string get_value;
+
+      GetLengthPrefixedSlice(&record,&key);
+      if( type != kTypeDeletion ){
+        GetLengthPrefixedSlice(&record,&value);
+      }
+      // 需要抛弃的值主要有以下三种情况：0，1，2
+      // 0. log 中不是 kv 分离的都抛弃
+      if(type != kTypeSeparation){
+        continue;
+      }
+
+      status = this->GetLsm(key,&get_value);
+      // 1. 从LSM tree 中找不到值，说明这个值被删除了，log中要丢弃
+      // 2. 找到了值，但是最新值不是kv分离的情况，所以也可以抛弃
+      if (status.IsNotFound() || !status.IsSeparated() ) {
+        continue;
+      }
+      // 读取错误，整个文件都不继续进行回收了
+      if( !status.ok() ){
+
+        std::cout<<"read the file error "<<std::endl;
+        return status;
+      }
+      // 判断是否要丢弃旧值
+      Slice get_slice(get_value);
+      uint64_t lsm_fid;
+      uint64_t lsm_offset;
+
+      GetVarint64(&get_slice,&lsm_fid);
+      GetVarint64(&get_slice,&lsm_offset);
+      if( fid == lsm_fid && lsm_offset == kv_offset ){
+        batch.Put(key, value);
+        ++next_sequence;
+        if( kv_offset - size_offset > config::gcWriteBatchSize ){
+          Write(opt, &batch);
+          batch.Clear();
+          batch.setGarbageColletion(true);
+          WriteBatchInternal::SetSequence(&batch, next_sequence);
+          uint64_t kv_size;
+          GetVarint64(&get_slice,&kv_size);
+          size_offset = kv_offset + kv_size;
+        }
+      }
+
+    }
+
+    record_offset += record.data() - head_record_ptr;
+  }
+  Write(opt, &batch);
+  status = env_->RemoveFile(logName);
+  if( status.ok() ){
+    garbage_collection_management_->RemoveFileFromMap(fid);
+  }
+  return status;
+}
+
+// 回收任务
+void DBImpl::BackGroundGarbageCollection(){
+  uint64_t fid;
+  uint64_t last_sequence;
+  while( true){
+    Log(options_.info_log, "garbage collection file number: %lu", fid);
+    if( !garbage_collection_management_->GetGarbageCollectionQueue(fid,last_sequence) ){
+      return;
+    }
+    // 在线的gc回收的sequence是要提前就分配好的。
+    CollectionValueLog(fid,last_sequence);
+  }
+}
+
+// 可能调度后台线程进行压缩
+void DBImpl::MaybeScheduleGarbageCollection() {
+  mutex_.AssertHeld();
+  if (background_GarbageCollection_scheduled_) {
+    // Already scheduled
+    // 先检查线程是否已经被调度了，如果已经被调度了，就直接退出。
+  } else if (shutting_down_.load(std::memory_order_acquire)) {
+    // DB is being deleted; no more background compactions
+    // 如果DB已经被关闭，那么就不调度了。
+  } else if (!bg_error_.ok()) {
+    // Already got an error; no more changes
+    // 如果后台线程出错，也不调度。
+  } else {
+    //设置调度变量,通过detach线程调度;detach线程即使主线程退出,依然可以正常执行完成
+    background_GarbageCollection_scheduled_ = true;
+    env_->ScheduleForGarbageCollection(&DBImpl::GarbageCollectionBGWork, this);
+  }
+}
+// 后台gc线程中执行的任务
+void DBImpl::GarbageCollectionBGWork(void* db) {
+  reinterpret_cast<DBImpl*>(db)->GarbageCollectionBackgroundCall();
+}
+
+void DBImpl::GarbageCollectionBackgroundCall() {
+  assert(background_GarbageCollection_scheduled_);
+  if (shutting_down_.load(std::memory_order_acquire)) {
+    // No more background work when shutting down.
+    // // 如果DB已经被关闭，那么就不调度了。
+  } else if (!bg_error_.ok()) {
+    // No more background work after a background error.
+    // 如果后台线程出错，也不调度。
+  } else {
+    // 开始后台GC回收线程
+    BackGroundGarbageCollection();
+  }
+
+  background_GarbageCollection_scheduled_ = false;
+  //再调用 MaybeScheduleGarbageCollection 检查是否需要再次调度
+  // MaybeScheduleGarbageCollection();
+  garbage_collection_work_signal_.SignalAll();
+}
+
+// TODO end
 
 void DBImpl::BGWork(void* db) {
   reinterpret_cast<DBImpl*>(db)->BackgroundCall();
@@ -843,9 +1054,9 @@ void DBImpl::BackgroundCompaction() {
     // TODO begin conmpact 后需要考虑是否将 value log 文件进行 gc回收，如果需要将其加入到回收任务队列中。
     // 不进行后台的gc回收，那么也不更新待分配sequence的log了。
     if(!finish_back_garbage_collection_){
-        garbage_colletion_management_->UpdateQueue(versions_->ImmLogFileNumber() );
+        garbage_collection_management_->UpdateQueue(versions_->ImmLogFileNumber() );
     }
-    // TODO end
+
     CleanupCompaction(compact);
     c->ReleaseInputs();
     RemoveObsoleteFiles();
@@ -1103,7 +1314,22 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
           break;
         }
       }
-    }
+    } else {// TODO begin
+      //fid ,key valuesize ,
+      Slice drop_value = input->value();
+      //  获得type类型
+      if( ikey.type == kTypeSeparation ){
+        uint64_t fid = 0;
+        uint64_t offset = 0;
+        uint64_t size = 0;
+        GetVarint64(&drop_value,&fid);
+        GetVarint64(&drop_value,&offset);
+        GetVarint64(&drop_value,&size);
+        mutex_.Lock();
+        garbage_collection_management_->UpdateMap(fid,size);
+        mutex_.Unlock();
+      }
+    }// TODO end
 
     input->Next();
   }
@@ -1226,6 +1452,48 @@ bool DBImpl::ParseVlogValue(Slice key_value, Slice key,
   }
 }
 
+Status DBImpl::GetLsm(const Slice& key, std::string* value) {
+  MutexLock l(&mutex_);
+  ReadOptions options;
+  MemTable* mem = mem_;
+  MemTable* imm = imm_;
+  Version* current = versions_->current();
+  if( !this->snapshots_.empty() ){
+    options.snapshot = this->snapshots_.oldest();
+  }
+  SequenceNumber snapshot;
+  if (options.snapshot != nullptr) {
+    snapshot = static_cast<const SnapshotImpl*>(options.snapshot)->sequence_number();
+  } else {
+    snapshot = versions_->LastSequence();
+  }
+  Status s;
+  mem->Ref();
+  // imm 不一定存在，但是 mem 是一定存在的。
+  if (imm != nullptr) imm->Ref();
+  current->Ref(); // Version 读引用计数增一
+  Version::GetStats stats;
+  // Unlock while reading from files and memtables
+  {
+    mutex_.Unlock();
+    // First look in the memtable, then in the immutable memtable (if any).
+    LookupKey lkey(key, snapshot);
+    if (mem->Get(lkey, value, &s )) {
+      // Done
+    } else if (imm != nullptr && imm->Get(lkey, value, &s)) {
+      // Done
+    } else {
+      //在Version中查找是否包含指定key值
+      s = current->Get(options, lkey, value, &stats);
+    }
+    mutex_.Lock();
+  }
+  mem->Unref();
+  if (imm != nullptr) imm->Unref();
+  current->Unref(); //Version 读引用计数减一
+  return s;
+}
+
 Status DBImpl::Get(const ReadOptions& options, const Slice& key,
                    std::string* value) {
   Status s;
@@ -1341,12 +1609,20 @@ void DBImpl::RecordReadSample(Slice key) {
 
 const Snapshot* DBImpl::GetSnapshot() {
   MutexLock l(&mutex_);
+  // TODO begin 建立快照 对快照之后的信息不进行回收了。
+  finish_back_garbage_collection_ = true;
+  // TODO end
   return snapshots_.New(versions_->LastSequence());
 }
 
 void DBImpl::ReleaseSnapshot(const Snapshot* snapshot) {
   MutexLock l(&mutex_);
   snapshots_.Delete(static_cast<const SnapshotImpl*>(snapshot));
+  // TODO begin 没有快照了重新进行后台回收
+  if( snapshots_.empty() ){
+    finish_back_garbage_collection_ = false;
+  }
+  // TODO end
 }
 
 /***    DBImpl 类关于 Fields 类的 Put、Get 接口    ***/
@@ -1396,6 +1672,30 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
 
   if (status.ok() && updates != nullptr) {  // nullptr batch is for compactions
     WriteBatch* write_batch = BuildBatchGroup(&last_writer);
+
+    // TODO begin gc中的batch全部都是设置好的。此时是不需要设置的。
+    if( !write_batch->IsGarbageColletion() ){
+      // 判断是否需要进行垃圾回收，如需要，腾出一块sequence的区域,触发垃圾回收将在makeroomforwrite当中。
+      // 先进行判断是否要进行gc后台回收，如果建立了快照的话finish_back_garbage_collection_就是true，
+      // 此时不进行sequence分配了。
+      //
+      if( !finish_back_garbage_collection_
+          && garbage_collection_management_->ConvertQueue(last_sequence) ){
+        // 尝试调度gc回收线程进行回收。
+        MaybeScheduleGarbageCollection();
+      }
+      //SetSequence在write_batch中写入本次的sequence
+      WriteBatchInternal::SetSequence(write_batch, last_sequence + 1);
+      // Count返回write_batch中的key-value个数
+      last_sequence += WriteBatchInternal::Count(write_batch);
+    }
+    vlog_kv_numbers_ += WriteBatchInternal::Count(write_batch);
+    // TODO 这里设置last_sequence  是为了照顾离线回收的时候，在map存在的时候需要调用 ConvertQueue 给回收任务分配sequence。
+    // TODO 针对多线程调用put的时候，为了避免给gc回收的时候分配的sequence重叠。
+    versions_->SetLastSequence(last_sequence);
+    // TODO end
+
+
     WriteBatchInternal::SetSequence(write_batch, last_sequence + 1);
     last_sequence += WriteBatchInternal::Count(write_batch);
 
@@ -1479,11 +1779,15 @@ WriteBatch* DBImpl::BuildBatchGroup(Writer** last_writer) {
   ++iter;  // Advance past "first"
   for (; iter != writers_.end(); ++iter) {
     Writer* w = *iter;
-    if (w->sync && !first->sync) {
+    // TODO begin 写队列中如果碰到是gc的write_batch 停止合并。
+    if (w->sync && !first->sync
+        || first->batch->IsGarbageColletion()
+        || w->batch->IsGarbageColletion()) {
+      // 当前的Writer要求 Sync ，而第一个Writer不要求Sync，两个的磁盘写入策略不一致。不做合并操作
       // Do not include a sync write into a batch handled by a non-sync write.
       break;
     }
-
+    // TODO end
     if (w->batch != nullptr) {
       size += WriteBatchInternal::ByteSize(w->batch);
       if (size > max_size) {
@@ -1520,7 +1824,7 @@ Status DBImpl::MakeRoomForWrite(bool force) {
     if (!s.ok()) {
       versions_->ReuseFileNumber(new_log_number);
     }
-//    gc_management_->WriteFileMap(logfile_number_, vlog_kv_numbers_, logfile_->GetSize());
+    garbage_collection_management_->WriteFileMap(logfile_number_, vlog_kv_numbers_, logfile_->GetSize());
     vlog_kv_numbers_ = 0;
     delete vlog_;
     delete logfile_;
@@ -1684,7 +1988,7 @@ Status DB::Open(const Options& options, const std::string& dbname, DB** dbptr) {
 
   // TODO begin
   std::vector<uint64_t> logs;
-  s = impl->GetAllValueLog(dbname,logs);
+  s = impl->GetAllValueLog(dbname, logs);
   sort(logs.begin(),logs.end());
   // TODO end
 
@@ -1728,7 +2032,7 @@ Status DB::Open(const Options& options, const std::string& dbname, DB** dbptr) {
               uint64_t next_sequence = impl->versions_->LastSequence() + 1;
               std::cout<<" collection file : "<<fid<<std::endl;
               impl->mutex_.Unlock();
-              Status stmp = impl->CollectionValueLog( fid,next_sequence );
+              Status stmp = impl->CollectionValueLog(fid, next_sequence);
               impl->mutex_.Lock();
               if( !stmp.ok() ) s = stmp;
               impl->versions_->SetLastSequence(next_sequence - 1);

@@ -197,6 +197,7 @@ class LEVELDB_EXPORT Env {
   // serialized.
   virtual void Schedule(void (*function)(void* arg), void* arg) = 0;
 
+  virtual void ScheduleForGarbageCollection(void (*function)(void* arg), void* arg) = 0;
   // Start a new thread, invoking "function(arg)" within the new thread.
   // When "function(arg)" returns, the thread will be destroyed.
   virtual void StartThread(void (*function)(void* arg), void* arg) = 0;
@@ -385,6 +386,11 @@ class LEVELDB_EXPORT EnvWrapper : public Env {
   void Schedule(void (*f)(void*), void* a) override {
     return target_->Schedule(f, a);
   }
+
+  void ScheduleForGarbageCollection(void (*f)(void*), void* a) override{
+    return target_->ScheduleForGarbageCollection(f, a);
+  }
+
   void StartThread(void (*f)(void*), void* a) override {
     return target_->StartThread(f, a);
   }

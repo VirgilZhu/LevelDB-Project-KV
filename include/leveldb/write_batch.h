@@ -76,10 +76,16 @@ class LEVELDB_EXPORT WriteBatch {
   Status Iterate(Handler* handler) const;
   Status Iterate(Handler* handler, uint64_t fid, uint64_t offset) const;
 
+  bool IsGarbageColletion() { return belong_to_gc; }
+
+  void setGarbageColletion(bool is_gc) { belong_to_gc = is_gc; }
+
  private:
   friend class WriteBatchInternal;
   size_t separate_threshold_;
   std::string rep_;  // See comment in write_batch.cc for the format of rep_
+
+  bool belong_to_gc;
 };
 
 }  // namespace leveldb

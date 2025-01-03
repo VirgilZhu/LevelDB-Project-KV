@@ -698,6 +698,9 @@ class PosixEnv : public Env {
   void Schedule(void (*background_work_function)(void* background_work_arg),
                 void* background_work_arg) override;
 
+  void ScheduleForGarbageCollection(void (*background_work_function)(void* background_work_arg),
+                                    void* background_work_arg) override;
+
   void StartThread(void (*thread_main)(void* thread_main_arg),
                    void* thread_main_arg) override {
     std::thread new_thread(thread_main, thread_main_arg);
@@ -753,9 +756,14 @@ class PosixEnv : public Env {
 
  private:
   void BackgroundThreadMain();
+  void BackgroundThreadMainGarbageCollection();
 
   static void BackgroundThreadEntryPoint(PosixEnv* env) {
     env->BackgroundThreadMain();
+  }
+
+  static void BackgroundThreadEntryPointforGlobalCollection(PosixEnv* env) {
+    env->BackgroundThreadMainGarbageCollection();
   }
 
   // Stores the work item data in a Schedule() call.
@@ -778,6 +786,14 @@ class PosixEnv : public Env {
 
   std::queue<BackgroundWorkItem> background_work_queue_
       GUARDED_BY(background_work_mutex_);
+
+  // TODO begin gc 回收相关的变量
+  port::Mutex background_GlobalCollection_work_mutex_;
+  port::CondVar background_GlobalCollection_work_cv_ GUARDED_BY(background_GlobalCollection_work_mutex_);
+
+  std::queue<BackgroundWorkItem> background_GlobalCollection_work_queue_
+      GUARDED_BY(background_GlobalCollection_work_mutex_);
+  // TODO end
 
   PosixLockTable locks_;  // Thread-safe.
   Limiter mmap_limiter_;  // Thread-safe.
@@ -814,6 +830,7 @@ int MaxOpenFiles() {
 
 PosixEnv::PosixEnv()
     : background_work_cv_(&background_work_mutex_),
+      background_GlobalCollection_work_cv_(&background_GlobalCollection_work_mutex_),
       started_background_thread_(false),
       mmap_limiter_(MaxMmaps()),
       fd_limiter_(MaxOpenFiles()) {}
@@ -854,6 +871,41 @@ void PosixEnv::BackgroundThreadMain() {
     background_work_queue_.pop();
 
     background_work_mutex_.Unlock();
+    background_work_function(background_work_arg);
+  }
+}
+
+void PosixEnv::ScheduleForGarbageCollection(
+    void (*background_work_function)(void* background_work_arg),
+    void* background_work_arg) {
+  background_GlobalCollection_work_mutex_.Lock();
+
+
+  // If the queue is empty, the background thread may be waiting for work.
+  if (background_GlobalCollection_work_queue_.empty()) {
+    background_GlobalCollection_work_cv_.Signal();
+  }
+  // 因为是锁住了 所以可以先 signal 再 emplace。
+  background_GlobalCollection_work_queue_.emplace(background_work_function, background_work_arg);
+  background_GlobalCollection_work_mutex_.Unlock();
+}
+
+// gc 的后台回收任务
+void PosixEnv::BackgroundThreadMainGarbageCollection() {
+  while (true) {
+    background_GlobalCollection_work_mutex_.Lock();
+
+    // Wait until there is work to be done.
+    while (background_GlobalCollection_work_queue_.empty()) {
+      background_GlobalCollection_work_cv_.Wait();
+    }
+
+    assert(!background_GlobalCollection_work_queue_.empty());
+    auto background_work_function = background_GlobalCollection_work_queue_.front().function;
+    void* background_work_arg = background_GlobalCollection_work_queue_.front().arg;
+    background_GlobalCollection_work_queue_.pop();
+
+    background_GlobalCollection_work_mutex_.Unlock();
     background_work_function(background_work_arg);
   }
 }

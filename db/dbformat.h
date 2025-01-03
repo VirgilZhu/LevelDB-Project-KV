@@ -44,6 +44,9 @@ static const int kMaxMemCompactLevel = 2;
 // Approximate gap in bytes between samples of data read during iteration.
 static const int kReadBytesPeriod = 1048576;
 
+// gc后台回收的时候进行 batch合并之后再写入的大小。
+static const uint64_t gcWriteBatchSize = 4*1024*1024;
+
 }  // namespace config
 
 class InternalKey;

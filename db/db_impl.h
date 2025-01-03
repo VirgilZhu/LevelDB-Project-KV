@@ -13,6 +13,8 @@
 #include "db/dbformat.h"
 #include "db/log_writer.h"
 #include "db/vlog_writer.h"
+#include "db/kv_separate_management.h"
+
 #include "db/snapshot.h"
 #include "leveldb/db.h"
 #include "leveldb/env.h"
@@ -77,6 +79,11 @@ class DBImpl : public DB {
   // Samples are taken approximately once every config::kReadBytesPeriod
   // bytes.
   void RecordReadSample(Slice key);
+
+  // TODO begin
+  Status OutLineGarbageCollection();
+  Status GetAllValueLog(std::string dir, std::vector<uint64_t>& logs);
+  // TODO end
 
  private:
   friend class DB;
@@ -145,6 +152,15 @@ class DBImpl : public DB {
   void RecordBackgroundError(const Status& s);
 
   void MaybeScheduleCompaction() EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+
+  // TODO begin
+  static void GarbageCollectionBGWork(void* db);
+  void GarbageCollectionBackgroundCall();
+  void MaybeScheduleGarbageCollection() EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+  void BackGroundGarbageCollection();
+  Status CollectionValueLog(uint64_t fid, uint64_t& last_sequence);
+  // TODO end
+
   static void BGWork(void* db);
   void BackgroundCall();
   void BackgroundCompaction() EXCLUSIVE_LOCKS_REQUIRED(mutex_);
@@ -161,6 +177,10 @@ class DBImpl : public DB {
   const Comparator* user_comparator() const {
     return internal_comparator_.user_comparator();
   }
+
+  // TODO begin
+  Status GetLsm( const Slice& key,std::string* value);
+  // TODO end
 
   // Constant after construction
   Env* const env_;
@@ -215,7 +235,16 @@ class DBImpl : public DB {
 
   int vlog_kv_numbers_;
 
-//  KVSepManagement* gc_management_;
+  // TODO begin 用于gc回收的过程
+
+  port::CondVar garbage_collection_work_signal_ GUARDED_BY(mutex_);
+  // 表示后台gc线程是否已经被调度或者在运行
+  bool background_GarbageCollection_scheduled_ GUARDED_BY(mutex_);
+
+  bool finish_back_garbage_collection_;
+  SeparateManagement* garbage_collection_management_;
+
+  // TODO end
 };
 
 // Sanitize db options.  The caller should delete result.info_log if
