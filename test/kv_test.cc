@@ -8,7 +8,7 @@ using namespace leveldb;
 
 constexpr int short_value_size = 4;
 constexpr int long_value_size = 32;
-constexpr int data_size = 32;
+constexpr int data_size = 512;
 
 Status OpenDB(std::string dbName, DB **db) {
   std::string rm_command = "rm -rf " + dbName;
@@ -32,20 +32,6 @@ void InsertData(DB *db, int value_size) {
   }
 
 }
-
- void GetData(DB *db, int size = (1 << 30), int value_size = 0) {
-   ReadOptions readOptions;
-   int key_num = data_size / value_size;
-  
-   // 点查
-   srand(42);
-   for (int i = 0; i < 100; i++) {
-     int key_ = rand() % key_num+1;
-     std::string key = std::to_string(key_);
-     std::string value;
-     db->Get(readOptions, key, &value);
-   }
- }
 
  TEST(TestKV, GetValue) {
      DB *db;
@@ -83,14 +69,12 @@ TEST(TestKV, GetLongValue) {
     Status status;
     int key_num = data_size / long_value_size;
     for (int i = 0; i < key_num; i++) {
-//    for (int i = 0; i < key_num - 1; i++) {
-        // int key_ = rand() % key_num+1;
         std::string key = std::to_string(i);
         std::string value;
         std::string expected_value(long_value_size, 'a');
         status = db->Get(readOptions, key, &value);
-        std::cout << key << std::endl;
-        std::cout << status.ToString() << std::endl;
+//        std::cout << key << std::endl;
+//        std::cout << status.ToString() << std::endl;
         ASSERT_TRUE(status.ok());
         EXPECT_EQ(expected_value, value);
     }
