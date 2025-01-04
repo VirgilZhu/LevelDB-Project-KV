@@ -289,6 +289,4 @@ std::vector<std::string> Fields::FindKeysByFields(leveldb::DB* db, const FieldAr
   return find_keys;
 }
 
-
-
 } // namespace leveldb
