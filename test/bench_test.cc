@@ -84,7 +84,14 @@ void FindKeys(DB *db, std::vector<int64_t> &lats) {
     int key_ = rand() % num_ + 1;
     FieldArray fields_to_find = {{"field" + std::to_string(key_), "old_value_" + std::to_string(key_)}};
     auto start_time = std::chrono::steady_clock::now();
-    Fields::FindKeysByFields(db, fields_to_find);
+
+    std::string dbname_ = "benchmark_db";
+    Options options;
+    options.create_if_missing = true;
+    DBImpl* impl = new DBImpl(options, dbname_);
+
+
+    Fields::FindKeysByFields(db, fields_to_find, impl);
     auto end_time = std::chrono::steady_clock::now();
     lats.emplace_back(std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count());
   }

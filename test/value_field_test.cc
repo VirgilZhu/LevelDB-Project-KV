@@ -18,7 +18,7 @@ Status OpenDB(const std::string& dbName, DB** db) {
 class FieldsTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    Status s = OpenDB("testdb", &db_);
+    Status s = OpenDB(dbname_ , &db_);
     EXPECT_TRUE(s.ok()) << "Failed to open database: " << s.ToString();
   }
 
@@ -28,6 +28,7 @@ class FieldsTest : public ::testing::Test {
   }
 
   DB* db_ = nullptr; // 数据库实例指针。
+  std::string dbname_ = "testdb"; // 记录数据库路径
 };
 
 // 测试各种构造函数
@@ -225,7 +226,12 @@ TEST_F(FieldsTest, TestBulkInsertSerializeDeleteAndFindKeys) {
 
   // 使用 FindKeysByFields 查找包含特定字段的键
   FieldArray fields_to_find = {{"field2", "value2_"}};
-  std::vector<std::string> found_keys = Fields::FindKeysByFields(db_, fields_to_find);
+
+  Options options;
+  options.create_if_missing = true;
+  DBImpl* impl = new DBImpl(options, dbname_);
+
+  std::vector<std::string> found_keys = Fields::FindKeysByFields(db_, fields_to_find, impl);
 
   // 验证找到的键是否正确
   EXPECT_EQ(found_keys.size(), num_entries - 1) << "Expected " << num_entries - 1 << " keys but found " << found_keys.size();
@@ -237,7 +243,7 @@ TEST_F(FieldsTest, TestBulkInsertSerializeDeleteAndFindKeys) {
 
   // 再次查找，这次没有符合条件的字段
   FieldArray no_match_fields = {{"nonexistent_field", ""}};
-  found_keys = Fields::FindKeysByFields(db_, no_match_fields);
+  found_keys = Fields::FindKeysByFields(db_, no_match_fields, impl);
   EXPECT_TRUE(found_keys.empty()) << "Expected an empty result for non-matching fields.";
 }
 

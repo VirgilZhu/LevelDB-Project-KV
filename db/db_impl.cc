@@ -231,6 +231,14 @@ Status DBImpl::NewDB() {
   return s;
 }
 
+Env* DBImpl::GetEnv() const {
+  return env_;
+}
+
+std::string DBImpl::GetDBName() const {
+  return dbname_;
+}
+
 void DBImpl::MaybeIgnoreError(Status* s) const {
   if (s->ok() || options_.paranoid_checks) {
     // No change needed
@@ -1574,7 +1582,6 @@ Status DBImpl::Get(const ReadOptions& options, const Slice& key,
 
     VlogReader vlogReader(file, &reporter);
     Slice key_value;
-    Slice ret_value;
     char* scratch = new char[encoded_len];
 
     if (vlogReader.ReadValue(offset, encoded_len, &key_value, scratch)) {
@@ -1587,6 +1594,7 @@ Status DBImpl::Get(const ReadOptions& options, const Slice& key,
     }
 
     delete file;
+    file = nullptr;
   }
 
   return s;
@@ -1676,6 +1684,8 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
 
   if (status.ok() && updates != nullptr) {  // nullptr batch is for compactions
     WriteBatch* write_batch = BuildBatchGroup(&last_writer);
+    WriteBatchInternal::SetSequence(write_batch, last_sequence + 1);
+    last_sequence += WriteBatchInternal::Count(write_batch);
 
     // TODO begin gc中的batch全部都是设置好的。此时是不需要设置的。
     if( !write_batch->IsGarbageColletion() ){
@@ -1689,11 +1699,8 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
         MaybeScheduleGarbageCollection();
       }
       //SetSequence在write_batch中写入本次的sequence
-      WriteBatchInternal::SetSequence(write_batch, last_sequence + 1);
-      // Count返回write_batch中的key-value个数
       last_sequence += WriteBatchInternal::Count(write_batch);
     }
-    vlog_kv_numbers_ += WriteBatchInternal::Count(write_batch);
     // TODO 这里设置last_sequence  是为了照顾离线回收的时候，在map存在的时候需要调用 ConvertQueue 给回收任务分配sequence。
     // TODO 针对多线程调用put的时候，为了避免给gc回收的时候分配的sequence重叠。
     versions_->SetLastSequence(last_sequence);
@@ -1705,6 +1712,7 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
 
     /* TODO */
     vlog_kv_numbers_ += WriteBatchInternal::Count(write_batch);
+    // TODO end
 
     // Add to log and apply to memtable.  We can release the lock
     // during this phase since &w is currently responsible for logging

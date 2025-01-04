@@ -129,7 +129,7 @@ static bool FLAGS_reuse_logs = false;
 static bool FLAGS_compression = true;
 
 // Use the db with the following name.
-static const char* FLAGS_db = nullptr;
+static const char* FLAGS_db = "benchmark_db";
 
 // ZSTD compression level to try out
 static int FLAGS_zstd_compression_level = 1;

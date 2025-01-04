@@ -1,11 +1,16 @@
 #include <iostream>
 #include <utility>
 
-//#include <fstream>
+#include "db/filename.h"
 
-#include "fields.h"
+#include "leveldb/env.h"
+
 #include "util/coding.h"
+
 #include "dbformat.h"
+#include "fields.h"
+#include "vlog_reader.h"
+#include "db_impl.h"
 
 namespace leveldb {
 
@@ -171,97 +176,23 @@ std::string& Fields::operator[](const std::string& field_name) {
 }
 
 /* 通过若干个字段查询 Key */
-std::vector<std::string> Fields::FindKeysByFields(leveldb::DB* db, const FieldArray& fields) {
-    Fields to_fields = Fields(fields);
-    to_fields.Fields::SortFields();
-    FieldArray search_fields_ = to_fields.fields_;
-
-    std::vector<std::string> find_keys;
-
-    Iterator* it = db->NewIterator(leveldb::ReadOptions());
-    for (it->SeekToFirst(); it->Valid(); it->Next()) {
-
-        std::string iter_key = it->key().ToString();
-        if (std::find(find_keys.begin(), find_keys.end(), iter_key) != find_keys.end()){
-            continue;
-        }
-
-        FieldArray iter_fields_ = Fields::ParseValue(it->value().ToString()).fields_;
-
-        if (iter_fields_ == search_fields_ ||
-            std::includes(iter_fields_.begin(), iter_fields_.end(),
-                          search_fields_.begin(), search_fields_.end())) {
-            find_keys.emplace_back(iter_key);
-        }
-    }
-
-    assert(it->status().ok());
-    delete it;
-
-    return find_keys;
-}
-
-//std::vector<std::string> Fields::FindKeysByFields(leveldb::DB* db, const FieldArray& fields) {
+//std::vector<std::string> Fields::FindKeysByFields(leveldb::DB* db, const FieldArray& fields, const std::string& dbname, Env* env) {
 //    Fields to_fields = Fields(fields);
 //    to_fields.Fields::SortFields();
 //    FieldArray search_fields_ = to_fields.fields_;
 //
 //    std::vector<std::string> find_keys;
-//    std::vector<std::string> deleted_keys;
-//
-//    std::ofstream outfile;
-//    outfile.open("/home/workspace/leveldb_kv/test/log.txt");
-//    outfile.clear();
-//    outfile << "aaaaaaaaaaaaaaaaaaa\n";
 //
 //    Iterator* it = db->NewIterator(leveldb::ReadOptions());
 //    for (it->SeekToFirst(); it->Valid(); it->Next()) {
 //
-//        Slice iter_key_slice = it->key();
-//        outfile << "\niter_key_slice: " + iter_key_slice.ToString() + "\n";
-//        const char* p = iter_key_slice.data();
-//        const char* limit = p + iter_key_slice.size();
-////        const char* limit = p + 5;
-//
-//        uint32_t key_length;
-//        const char* key_ptr = GetVarint32Ptr(p, limit, &key_length);
-//
-//        iter_key_slice = Slice(p, iter_key_slice.size() - 8);
-//
-////        outfile << "\niter_key_slice: " + iter_key_slice.ToString() + "\n";
-//
-//        Slice iter_key_for_parse;
-//        if (!GetLengthPrefixedSlice(&iter_key_slice, &iter_key_for_parse)) {
+//        std::string iter_key = it->key().ToString();
+//        if (std::find(find_keys.begin(), find_keys.end(), iter_key) != find_keys.end()){
 //            continue;
 //        }
 //
-//        std::string iter_key = iter_key_for_parse.ToString();
+//        FieldArray iter_fields_ = Fields::ParseValue(it->value().ToString()).fields_;
 //
-//        outfile << "\niter_key_str: " + iter_key + "\n";
-//
-//        if (std::find(deleted_keys.begin(), deleted_keys.end(), iter_key) != deleted_keys.end()
-//            || std::find(find_keys.begin(), find_keys.end(), iter_key) != find_keys.end()) {
-//            continue;
-//        }
-//
-//        const uint64_t tag = DecodeFixed64(key_ptr + key_length - 8);
-//        if ((tag & 0xff) == kTypeDeletion) {
-//            deleted_keys.emplace_back(iter_key);
-//            continue;
-//        }
-//
-//        outfile << "\niter_tag_str: " + std::to_string(tag) + "\n";
-//
-//        Slice iter_value_slice = it->value();
-//        Slice iter_value_for_parse;
-//        if (!GetLengthPrefixedSlice(&iter_value_slice, &iter_value_for_parse)) {
-//            continue;
-//        }
-//
-//        outfile << "\niter_value_str: " + iter_value_for_parse.ToString() + "\n";
-//
-//        FieldArray iter_fields_ = Fields::ParseValue(iter_value_for_parse.ToString()).fields_;
-//        // FieldArray iter_fields_ = Fields::ParseValue(it->value().ToString()).fields_;
 //        if (iter_fields_ == search_fields_ ||
 //            std::includes(iter_fields_.begin(), iter_fields_.end(),
 //                          search_fields_.begin(), search_fields_.end())) {
@@ -274,5 +205,88 @@ std::vector<std::string> Fields::FindKeysByFields(leveldb::DB* db, const FieldAr
 //
 //    return find_keys;
 //}
+
+std::vector<std::string> Fields::FindKeysByFields(leveldb::DB* db, const FieldArray& fields, DBImpl* impl) {
+  Fields to_fields = Fields(fields);
+  to_fields.Fields::SortFields();
+  FieldArray search_fields_ = to_fields.fields_;
+
+  std::vector<std::string> find_keys;
+
+  Iterator* it = db->NewIterator(leveldb::ReadOptions());
+  for (it->SeekToFirst(); it->Valid(); it->Next()) {
+
+    std::string iter_key = it->key().ToString();
+    if (std::find(find_keys.begin(), find_keys.end(), iter_key) != find_keys.end()){
+      continue;
+    }
+
+    FieldArray iter_value_ = Fields::ParseValue(it->value().ToString()).fields_;
+
+    if (!iter_value_.empty()) {
+      if (iter_value_ == search_fields_ ||
+          std::includes(iter_value_.begin(), iter_value_.end(),
+                        search_fields_.begin(), search_fields_.end())) {
+        find_keys.emplace_back(iter_key);
+      }
+    } else {
+        uint64_t fid;
+        uint64_t kv_offset;
+        uint64_t val_size;
+        Slice vlog_ptr = it->value();
+        if (!(GetVarint64(&vlog_ptr, &fid)
+            && GetVarint64(&vlog_ptr, &kv_offset)
+            && GetVarint64(&vlog_ptr, &val_size)))  {
+          continue;
+        }
+        uint64_t encoded_len = 1 + VarintLength(it->key().size()) + it->key().size() + VarintLength(val_size) + val_size;
+
+        Env* env = impl->GetEnv();
+        std::string dbname = impl->GetDBName();
+
+        std::string fname = LogFileName(dbname, fid);
+        RandomAccessFile* file;
+
+        Status s = env->NewRandomAccessFile(fname, &file);
+        if (!s.ok()) {
+          continue;
+        }
+        struct VlogReporter : public log::VlogReader::Reporter {
+          Status* status;
+          void Corruption(size_t bytes, const Status& s) override {
+            if (this->status->ok()) *this->status = s;
+          }
+        };
+        VlogReporter reporter;
+        log::VlogReader vlogReader(file, &reporter);
+        Slice key_value;
+        std::string vlog_value;
+        char* scratch = new char[encoded_len];
+
+        if (vlogReader.ReadValue(kv_offset, encoded_len, &key_value, scratch)) {
+          if (!DBImpl::ParseVlogValue(key_value, it->key(), vlog_value, val_size)) {
+            s = Status::Corruption("value in vlog isn't match with given key");
+          }
+        } else {
+          s = Status::Corruption("read vlog error");
+        }
+
+        delete file;
+        file = nullptr;
+
+        iter_value_ = Fields::ParseValue(vlog_value).fields_;
+        if (iter_value_ == search_fields_ ||
+            std::includes(iter_value_.begin(), iter_value_.end(),
+                          search_fields_.begin(), search_fields_.end())) {
+          find_keys.emplace_back(iter_key);
+        }
+    }
+  }
+
+//  assert(it->status().ok());
+  delete it;
+
+  return find_keys;
+}
 
 } // namespace leveldb

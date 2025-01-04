@@ -1,8 +1,10 @@
 #ifndef LEVELDB_FIELDS_H
 #define LEVELDB_FIELDS_H
 
-#include "vector"
 #include "leveldb/db.h"
+
+#include "db_impl.h"
+#include "vector"
 
 namespace leveldb {
 
@@ -58,7 +60,7 @@ class Fields {
         std::string& operator[](const std::string& field_name);
 
         /* 通过若干个字段查询 Key */
-        static std::vector<std::string> FindKeysByFields(leveldb::DB* db, const FieldArray& fields);
+        static std::vector<std::string> FindKeysByFields(leveldb::DB* db, const FieldArray& fields, leveldb::DBImpl* impl);
 
         using iterator = std::vector<Field>::iterator;
         using const_iterator = std::vector<Field>::const_iterator;
