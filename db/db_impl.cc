@@ -389,6 +389,7 @@ Status DBImpl::Recover(VersionEdit* edit, bool* save_manifest) {
 
   // Recover in the order in which the logs were generated
   std::sort(logs.begin(), logs.end());
+  assert( logs.size() == 0 || logs[logs.size() - 1] >= versions_->ImmLogFileNumber() );
   // for (size_t i = 0; i < logs.size(); i++) {
   //   s = RecoverLogFile(logs[i], (i == logs.size() - 1), save_manifest, edit,
   //                      &max_sequence);
@@ -516,7 +517,8 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
       mem = new MemTable(internal_comparator_);
       mem->Ref();
     }
-    status = WriteBatchInternal::InsertInto(&batch, mem);
+    // status = WriteBatchInternal::InsertInto(&batch, mem);
+    status = WriteBatchInternal::InsertInto(&batch, mem,log_number,record_offset + 4);
     MaybeIgnoreError(&status);
     if (!status.ok()) {
       break;
@@ -545,6 +547,8 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
         break;
       }
     }
+    // 前面已经移除了一个头部了，所以偏移位置要个头部
+    record_offset += record.size() + log::vHeaderSize ;
   }
 
   delete file;

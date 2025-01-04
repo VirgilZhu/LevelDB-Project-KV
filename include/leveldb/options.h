@@ -155,7 +155,7 @@ struct LEVELDB_EXPORT Options {
   // gc 后台回收时候重新put的时候，默认的kv分离的值。
   uint64_t background_garbage_collection_separate_ = 1024 * 1024 - 1;
   // 在open 数据库的时候就进行全盘的log文件回收
-  bool start_garbage_collection = true;
+  bool start_garbage_collection = false;
 };
 
 // Options that control read operations

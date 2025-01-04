@@ -11,8 +11,6 @@ constexpr int long_value_size = 32;
 constexpr int data_size = 512;
 
 Status OpenDB(std::string dbName, DB **db) {
-
-  
   Options options;
   options.create_if_missing = true;
   return DB::Open(options, dbName, db);

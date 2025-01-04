@@ -7,8 +7,8 @@ using namespace leveldb;
 
 Status OpenDB(const std::string& dbName, DB** db) {
   // 如果数据库已经存在，则删除它。
-  std::string rm_command = "rm -rf " + dbName;
-  system(rm_command.c_str());
+//   std::string rm_command = "rm -rf " + dbName;
+//   system(rm_command.c_str());
 
   Options options;
   options.create_if_missing = true;
