@@ -42,7 +42,7 @@ void InsertFields(DB *db, std::vector<int64_t> &lats) {
   for (int i = 0; i < num_; ++i) {
     int key_ = rand() % num_ + 1;
     std::string key = std::to_string(key_);
-    FieldArray fields = {{"field" + std::to_string(key_), "old_value_" + std::to_string(key_)}};
+    FieldArray fields = {{"field", "old_value_"}};
     Fields f(fields);
     auto start_time = std::chrono::steady_clock::now();
     db->PutFields(writeOptions, Slice(key), f);
@@ -82,7 +82,7 @@ void FindKeys(DB *db, std::vector<int64_t> &lats) {
   srand(0);
   for (int i = 0; i < reads_; ++i) {
     int key_ = rand() % num_ + 1;
-    FieldArray fields_to_find = {{"field" + std::to_string(key_), "old_value_" + std::to_string(key_)}};
+    FieldArray fields_to_find = {{"field", "old_value_" }};
     auto start_time = std::chrono::steady_clock::now();
 
     std::string dbname_ = "benchmark_db";
