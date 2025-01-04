@@ -42,7 +42,7 @@ void InsertFields(DB *db, std::vector<int64_t> &lats) {
   for (int i = 0; i < num_; ++i) {
     int key_ = rand() % num_ + 1;
     std::string key = std::to_string(key_);
-    FieldArray fields = {{"field" + std::to_string(key_), "old_value_" + std::to_string(key)}};
+    FieldArray fields = {{"field" + std::to_string(key_), "old_value_" + std::to_string(key_)}};
     Fields f(fields);
     auto start_time = std::chrono::steady_clock::now();
     db->PutFields(writeOptions, Slice(key), f);
@@ -84,7 +84,14 @@ void FindKeys(DB *db, std::vector<int64_t> &lats) {
     int key_ = rand() % num_ + 1;
     FieldArray fields_to_find = {{"field" + std::to_string(key_), "old_value_" + std::to_string(key_)}};
     auto start_time = std::chrono::steady_clock::now();
-    Fields::FindKeysByFields(db, fields_to_find);
+
+    std::string dbname_ = "benchmark_db";
+    Options options;
+    options.create_if_missing = true;
+    DBImpl* impl = new DBImpl(options, dbname_);
+
+
+    Fields::FindKeysByFields(db, fields_to_find, impl);
     auto end_time = std::chrono::steady_clock::now();
     lats.emplace_back(std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count());
   }
@@ -102,13 +109,28 @@ double CalculatePercentile(const std::vector<int64_t>& latencies, double percent
   return sorted_latencies[index];
 }
 
+void SetupData(DB *db) {
+  std::vector<int64_t> lats;
+  InsertData(db, lats);
+}
+
+void SetupFields(DB *db) {
+  std::vector<int64_t> lats;
+  InsertFields(db, lats);
+}
+
 template<typename Func>
-void RunBenchmark(const char* name, Func func) {
+void RunBenchmark(const char* name, Func func, bool setup_data = true, bool setup_fields = false) {
   DB *db;
+  std::string rm_command = "rm -rf testdb_bench";
+  system(rm_command.c_str());
   if (!OpenDB("testdb_bench", &db).ok()) {
     std::cerr << "open db failed" << std::endl;
     abort();
   }
+
+  if (setup_data) SetupData(db);
+  if (setup_fields) SetupFields(db);
 
   std::vector<int64_t> lats;
   auto start_time = std::chrono::steady_clock::now();
@@ -131,14 +153,15 @@ void RunBenchmark(const char* name, Func func) {
   delete db;
 }
 
-class BenchTest : public ::testing::TestWithParam<double> {};
+// TEST(BenchTest, PutLatency) { RunBenchmark("Put", InsertData, false, false); }
+// TEST(BenchTest, PutFieldsLatency) { RunBenchmark("PutFields", InsertFields, false, false); }
 
-TEST_P(BenchTest, PutLatency) { RunBenchmark("Put", InsertData); }
-TEST_P(BenchTest, PutLatency) { RunBenchmark("PutFields", InsertFields); }
-TEST_P(BenchTest, GetLatency) { RunBenchmark("Get", GetData); }
-TEST_P(BenchTest, IteratorLatency) { RunBenchmark("Iterator", ReadOrdered); }
-TEST_P(BenchTest, FindKeysByFieldLatency) { RunBenchmark("FindKeysByFields", FindKeys); } 
+// TEST(BenchTest, GetLatency) { RunBenchmark("Get", GetData, true, false); }
+// TEST(BenchTest, IteratorLatency) { RunBenchmark("Iterator", ReadOrdered, true, false); }
 
+TEST(BenchTest, FindKeysByFieldLatency) {
+  RunBenchmark("FindKeysByFields", FindKeys, false, true);
+}
 
 int main(int argc, char **argv) {
   testing::InitGoogleTest(&argc, argv);
