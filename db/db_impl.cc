@@ -1696,7 +1696,7 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
     // TODO end
 
 
-    WriteBatchInternal::SetSequence(write_batch, last_sequence + 1);
+    WriteBatchInternal::SetSequence(write_batch, last_sequence );
     last_sequence += WriteBatchInternal::Count(write_batch);
 
     /* TODO */

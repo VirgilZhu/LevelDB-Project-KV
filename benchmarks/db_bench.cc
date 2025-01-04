@@ -20,6 +20,7 @@
 #include "util/mutexlock.h"
 #include "util/random.h"
 #include "util/testutil.h"
+#include "db/fields.h"
 
 // Comma-separated list of operations to run in the specified order
 //   Actual benchmarks:
@@ -55,20 +56,24 @@ static const char* FLAGS_benchmarks =
     "readreverse,"
     "compact,"
     "readrandom,"
+    "findkeysbyfield,"
     "readseq,"
     "readreverse,"
-    "fill100K,"
-    "crc32c,"
-    "snappycomp,"
-    "snappyuncomp,"
-    "zstdcomp,"
-    "zstduncomp,";
+    "fill100K,";
+    // "crc32c,"
+    // "snappycomp,"
+    // "snappyuncomp,"
+    // "zstdcomp,"
+    // "zstduncomp,";
 
 // Number of key/values to place in database
 static int FLAGS_num = 1000000;
 
 // Number of read operations to do.  If negative, do FLAGS_num reads.
 static int FLAGS_reads = -1;
+
+// Number of given fields used in FindKeysByField test. If negative, write in half of FLAGS_num targets with given field.
+static int FLAGS_num_fields = 80000; 
 
 // Number of concurrent threads to run.
 static int FLAGS_threads = 1;
@@ -438,6 +443,7 @@ class Benchmark {
   int heap_counter_;
   CountComparator count_comparator_;
   int total_thread_count_;
+  int num_fields; // 插入的fields数量
 
   void PrintHeader() {
     const int kKeySize = 16 + FLAGS_key_prefix;
@@ -530,7 +536,8 @@ class Benchmark {
         reads_(FLAGS_reads < 0 ? FLAGS_num : FLAGS_reads),
         heap_counter_(0),
         count_comparator_(BytewiseComparator()),
-        total_thread_count_(0) {
+        total_thread_count_(0),
+        num_fields(FLAGS_num_fields < 0 ? FLAGS_num / 2 : FLAGS_num_fields) {
     std::vector<std::string> files;
     g_env->GetChildren(FLAGS_db, &files);
     for (size_t i = 0; i < files.size(); i++) {
@@ -615,6 +622,8 @@ class Benchmark {
         method = &Benchmark::SeekRandom;
       } else if (name == Slice("seekordered")) {
         method = &Benchmark::SeekOrdered;
+      } else if (name == Slice("findkeysbyfield")) {
+        method = &Benchmark::FindKeysByField;
       } else if (name == Slice("readhot")) {
         method = &Benchmark::ReadHot;
       } else if (name == Slice("readrandomsmall")) {
@@ -852,8 +861,11 @@ class Benchmark {
       for (int j = 0; j < entries_per_batch_; j++) {
         const int k = seq ? i + j : thread->rand.Uniform(FLAGS_num);
         key.Set(k);
-        batch.Put(key.slice(), gen.Generate(value_size_));
-        bytes += value_size_ + key.slice().size();
+        FieldArray fields = {{"field1", "value1_" + std::to_string(i)}, {"field2", "value2_"}};
+        Fields ffields(fields);
+        db_->PutFields(WriteOptions(), key.slice(), ffields);
+        // batch.Put(key.slice(), gen.Generate(value_size_));
+        bytes += ffields.size() + key.slice().size();
         thread->stats.FinishedSingleOp();
       }
       s = db_->Write(write_options_, &batch);
@@ -933,6 +945,66 @@ class Benchmark {
       db_->Get(options, key.slice(), &value);
       thread->stats.FinishedSingleOp();
     }
+  }
+
+  void WriteTargetSeq(ThreadState* thread) { WriteGiven(thread, true); }
+
+  void WriteTargetRandom(ThreadState* thread) { WriteGiven(thread, false); }
+
+  void WriteGiven(ThreadState* thread, bool seq) {
+    if (num_ != FLAGS_num) {
+      char msg[100];
+      std::snprintf(msg, sizeof(msg), "(%d ops)", num_);
+      thread->stats.AddMessage(msg);
+    }
+
+    RandomGenerator gen;
+    WriteBatch batch;
+    Status s;
+    int64_t bytes = 0;
+    KeyBuffer key;
+    for (int i = 0; i < num_; i += entries_per_batch_) {
+      batch.Clear();
+      for (int j = 0; j < entries_per_batch_; j++) {
+        const int k = seq ? i + j : thread->rand.Uniform(FLAGS_num);
+        key.Set(k);
+
+        FieldArray fields;
+        auto value = gen.Generate(value_size_);
+        if (i < num_fields) {
+          fields = {
+            {"field1", value.ToString()},
+            {"field2", "value2_"},
+          };
+        } else {
+          fields = {
+            {"field1", value.ToString()},
+          };
+        } 
+
+        Fields ffields(fields);
+        db_->PutFields(WriteOptions(), key.slice(), ffields);
+        bytes += ffields.size() + key.slice().size();
+
+        thread->stats.FinishedSingleOp();
+      }
+      s = db_->Write(write_options_, &batch);
+      if (!s.ok()) {
+        std::fprintf(stderr, "put error: %s\n", s.ToString().c_str());
+        std::exit(1);
+      }
+    }
+    thread->stats.AddBytes(bytes);
+  }
+
+  void FindKeysByField(ThreadState* thread){
+    int found = 0;
+    FieldArray fields_to_find = {{"field2", "value2_"}};
+    std::vector<std::string> found_keys = Fields::FindKeysByFields(db_, fields_to_find);
+    found = found_keys.size();
+    char msg[100];
+    snprintf(msg, sizeof(msg), "(%d of %d found)", found, num_fields);
+    thread->stats.AddMessage(msg);
   }
 
   void SeekRandom(ThreadState* thread) {
@@ -1097,6 +1169,8 @@ int main(int argc, char** argv) {
       FLAGS_num = n;
     } else if (sscanf(argv[i], "--reads=%d%c", &n, &junk) == 1) {
       FLAGS_reads = n;
+    } else if (sscanf(argv[i], "--num_fields=%d%c", &n, &junk) == 1) {
+      FLAGS_num_fields = n;
     } else if (sscanf(argv[i], "--threads=%d%c", &n, &junk) == 1) {
       FLAGS_threads = n;
     } else if (sscanf(argv[i], "--value_size=%d%c", &n, &junk) == 1) {
