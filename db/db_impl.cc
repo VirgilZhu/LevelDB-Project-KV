@@ -397,6 +397,7 @@ Status DBImpl::Recover(VersionEdit* edit, bool* save_manifest) {
 
   // Recover in the order in which the logs were generated
   std::sort(logs.begin(), logs.end());
+  assert( logs.size() == 0 || logs[logs.size() - 1] >= versions_->ImmLogFileNumber() );
   // for (size_t i = 0; i < logs.size(); i++) {
   //   s = RecoverLogFile(logs[i], (i == logs.size() - 1), save_manifest, edit,
   //                      &max_sequence);
@@ -409,7 +410,7 @@ Status DBImpl::Recover(VersionEdit* edit, bool* save_manifest) {
   //   // update the file number allocation counter in VersionSet.
   //   versions_->MarkFileNumberUsed(logs[i]);
   // }
-  //TODO begin
+  //注释：逐个恢复日志的内容
   bool found_sequence_pos = false;
   for(int i = 0; i < logs.size(); ++i){
       if( logs[i] < versions_->ImmLogFileNumber() ) {
@@ -423,8 +424,7 @@ Status DBImpl::Recover(VersionEdit* edit, bool* save_manifest) {
           return s;
       }
   }
-    versions_->MarkFileNumberUsed(max_number);
-  //TODO end
+  versions_->MarkFileNumberUsed(max_number);
 
   if (versions_->LastSequence() < max_sequence) {
     versions_->SetLastSequence(max_sequence);
@@ -482,9 +482,8 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
   uint64_t record_offset = 0;
   int compactions = 0;
   MemTable* mem = nullptr;
-  // TODO begin
+  //注释：设置 imm_last_sequence
   uint64_t imm_last_sequence = versions_->ImmLastSequence();
-  // TODO end
   while (reader.ReadRecord(&record, &scratch) && status.ok()) {
     // if (record.size() < 12) {
     if (record.size() < 20) {
@@ -524,7 +523,8 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
       mem = new MemTable(internal_comparator_);
       mem->Ref();
     }
-    status = WriteBatchInternal::InsertInto(&batch, mem);
+    // status = WriteBatchInternal::InsertInto(&batch, mem);
+    status = WriteBatchInternal::InsertInto(&batch, mem,log_number,record_offset + 4);
     MaybeIgnoreError(&status);
     if (!status.ok()) {
       break;
@@ -539,10 +539,9 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
       compactions++;
       *save_manifest = true;
 
-      // TODO begin mem 落盘修改 imm_last_sequence，版本恢复
+      // 注释：mem 落盘修改 imm_last_sequence，版本恢复
       versions_->SetImmLastSequence(mem->GetTailSequence());
       versions_->SetImmLogFileNumber(log_number);
-      // TODO end
 
       status = WriteLevel0Table(mem, edit, nullptr);
       mem->Unref();
@@ -553,6 +552,8 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
         break;
       }
     }
+    // 前面已经移除了一个头部了，所以偏移位置要个头部
+    record_offset += record.size() + log::vHeaderSize ;
   }
 
   delete file;
@@ -583,10 +584,9 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
     // mem did not get reused; compact it.
     if (status.ok()) {
 
-      // TODO begin mem 落盘修改 imm_last_sequence，版本恢复
+      //注释： mem 落盘修改 imm_last_sequence，版本恢复
       versions_->SetImmLastSequence(mem->GetTailSequence());
       versions_->SetImmLogFileNumber(log_number);
-      // TODO end
       *save_manifest = true;
       status = WriteLevel0Table(mem, edit, nullptr);
     }
@@ -660,14 +660,12 @@ void DBImpl::CompactMemTable() {
     edit.SetPrevLogNumber(0);
     edit.SetLogNumber(logfile_number_);  // Earlier logs no longer needed
     // s = versions_->LogAndApply(&edit, &mutex_);
-    // TODO begin
-    //构建新版本，并将其加入到 version_当中
+    //注释： 构建新版本，并将其加入到 version_当中
     versions_->StartImmLastSequence(true);
     versions_->SetImmLastSequence(imm_->GetTailSequence());
     versions_->SetImmLogFileNumber(imm_->GetLogFileNumber());
     s = versions_->LogAndApply(&edit, &mutex_);
     versions_->StartImmLastSequence(false);
-    // TODO end
   }
 
   if (s.ok()) {
@@ -1703,6 +1701,14 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
     }
     // TODO 这里设置last_sequence  是为了照顾离线回收的时候，在map存在的时候需要调用 ConvertQueue 给回收任务分配sequence。
     // TODO 针对多线程调用put的时候，为了避免给gc回收的时候分配的sequence重叠。
+    versions_->SetLastSequence(last_sequence);
+    // TODO end
+
+
+    WriteBatchInternal::SetSequence(write_batch, last_sequence );
+    last_sequence += WriteBatchInternal::Count(write_batch);
+
+    /* TODO */
     vlog_kv_numbers_ += WriteBatchInternal::Count(write_batch);
     // TODO end
 

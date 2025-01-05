@@ -21,11 +21,10 @@ enum Tag {
   kNewFile = 7,
   // 8 was used for large value refs
   kPrevLogNumber = 9,
-  // TODO begin 在版本中记录 immemtable 转到 sst的时候的 sequence，主要用来恢复的时候 定位db关闭的时候
-  // imm 和 mem中的内容在恢复的时候应该从log文件中哪里开始恢复。
+  // 注释： 用于记录immemtable到sst的sequence
   kImmLastSequence = 10,
+  // 注释： 用于记录恢复immemtable和memtable时在log文件中对应的位置
   kLogFile = 11
-  // TODO end
 };
 
 void VersionEdit::Clear() {
@@ -35,20 +34,20 @@ void VersionEdit::Clear() {
   last_sequence_ = 0;
   next_file_number_ = 0;
 
-  // TODO begin
+  // 注释：重置为0
   imm_last_sequence_ = 0;
+  // 注释：重置为0
   imm_log_file_number_ = 0;
-  // TODO end
+ 
 
   has_comparator_ = false;
   has_log_number_ = false;
   has_prev_log_number_ = false;
-  has_next_file_number_ = false;
+  has_next_file_number_ = false; 
   has_last_sequence_ = false;
 
-  // TODO begin
+  // 注释：重置为false
   has_imm_last_sequence_ = false;
-  // TODO end
 
   // compact_pointers_.clear();
   deleted_files_.clear();
@@ -76,6 +75,7 @@ void VersionEdit::EncodeTo(std::string* dst) const {
     PutVarint32(dst, kLastSequence);
     PutVarint64(dst, last_sequence_);
   }
+  // 注释：若 imm_last_sequence_ 有效，则写入对应的标识符和数据
   if (has_imm_last_sequence_) {
     PutVarint32(dst, kImmLastSequence);
     PutVarint64(dst, imm_last_sequence_);
@@ -180,7 +180,7 @@ Status VersionEdit::DecodeFrom(const Slice& src) {
         }
         break;
 
-      // TODO begin
+      // 注释：如果是kImmLastSequence类型，则解析imm_last_sequence_和imm_log_file_number_并将has_imm_last_sequence_ 设为true
       case kImmLastSequence:
           if (GetVarint64(&input, &imm_last_sequence_) && GetVarint64(&input, &imm_log_file_number_)) {
               has_imm_last_sequence_ = true;
@@ -188,7 +188,7 @@ Status VersionEdit::DecodeFrom(const Slice& src) {
               msg = "imemtable last sequence number";
           }
           break;
-        // TODO end
+
 
       case kCompactPointer:
         if (GetLevel(&input, &level) && GetInternalKey(&input, &key)) {

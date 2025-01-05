@@ -10,11 +10,11 @@
 using namespace leveldb;
 
 // Number of key/values to operate in database
-constexpr int num_ = 100000;
+constexpr int num_ = 500000;
 // Size of each value
-constexpr int value_size_ = 1000;
+constexpr int value_size_ = 1024;
 // Number of read operations
-constexpr int reads_ = 100000;
+constexpr int reads_ = 500000;
 
 Status OpenDB(std::string dbName, DB **db) {
   Options options;
@@ -42,7 +42,7 @@ void InsertFields(DB *db, std::vector<int64_t> &lats) {
   for (int i = 0; i < num_; ++i) {
     int key_ = rand() % num_ + 1;
     std::string key = std::to_string(key_);
-    FieldArray fields = {{"field" + std::to_string(key_), "old_value_" + std::to_string(key_)}};
+    FieldArray fields = {{"field", "old_value_"}};
     Fields f(fields);
     auto start_time = std::chrono::steady_clock::now();
     db->PutFields(writeOptions, Slice(key), f);
@@ -82,10 +82,10 @@ void FindKeys(DB *db, std::vector<int64_t> &lats) {
   srand(0);
   for (int i = 0; i < reads_; ++i) {
     int key_ = rand() % num_ + 1;
-    FieldArray fields_to_find = {{"field" + std::to_string(key_), "old_value_" + std::to_string(key_)}};
+    FieldArray fields_to_find = {{"field", "old_value_" }};
     auto start_time = std::chrono::steady_clock::now();
 
-    std::string dbname_ = "benchmark_db";
+    std::string dbname_ = "bench_resr_db";
     Options options;
     options.create_if_missing = true;
     DBImpl* impl = new DBImpl(options, dbname_);
@@ -153,11 +153,11 @@ void RunBenchmark(const char* name, Func func, bool setup_data = true, bool setu
   delete db;
 }
 
- TEST(BenchTest, PutLatency) { RunBenchmark("Put", InsertData, false, false); }
- TEST(BenchTest, PutFieldsLatency) { RunBenchmark("PutFields", InsertFields, false, false); }
+TEST(BenchTest, PutLatency) { RunBenchmark("Put", InsertData, false, false); }
+TEST(BenchTest, PutFieldsLatency) { RunBenchmark("PutFields", InsertFields, false, false); }
 
- TEST(BenchTest, GetLatency) { RunBenchmark("Get", GetData, true, false); }
- TEST(BenchTest, IteratorLatency) { RunBenchmark("Iterator", ReadOrdered, true, false); }
+TEST(BenchTest, GetLatency) { RunBenchmark("Get", GetData, true, false); }
+TEST(BenchTest, IteratorLatency) { RunBenchmark("Iterator", ReadOrdered, true, false); }
 
 TEST(BenchTest, FindKeysByFieldLatency) {
   RunBenchmark("FindKeysByFields", FindKeys, false, true);

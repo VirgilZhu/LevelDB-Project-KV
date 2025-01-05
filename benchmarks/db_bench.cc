@@ -50,40 +50,42 @@ static const char* FLAGS_benchmarks =
     "fillsync,"
     "fillrandom,"
     "overwrite,"
-    "deleteseq,"
-    "deleterandom,"
     "readrandom,"
     "readrandom,"  // Extra run to allow previous compactions to quiesce
     "readseq,"
     "readreverse,"
     "compact,"
     "readrandom,"
+    "fillgivenseq,"
+    "fillgivenrandom,"
     "findkeysbyfield,"
     "readseq,"
     "readreverse,"
-    "seekrandom,"
-    "seekordered,"
+    "deleteseq,"
+    "deleterandom,"
     "fill100K,";
-// "crc32c,"
-// "snappycomp,"
-// "snappyuncomp,"
-// "zstdcomp,"
-// "zstduncomp,";
+    // "crc32c,"
+    // "snappycomp,"
+    // "snappyuncomp,"
+    // "zstdcomp,"
+    // "zstduncomp,";
 
 // Number of key/values to place in database
 static int FLAGS_num = 1000000;
+
+static int FLAGS_delete_num = 100000;
 
 // Number of read operations to do.  If negative, do FLAGS_num reads.
 static int FLAGS_reads = -1;
 
 // Number of given fields used in FindKeysByField test. If negative, write in half of FLAGS_num targets with given field.
-static int FLAGS_num_fields = 80000;
+static int FLAGS_num_fields = 100000;
 
 // Number of concurrent threads to run.
 static int FLAGS_threads = 1;
 
 // Size of each value
-static int FLAGS_value_size = 100;
+static int FLAGS_value_size = 1024;
 
 // Arrange to generate values that shrink to this fraction of
 // their original size after compression
@@ -440,6 +442,7 @@ class Benchmark {
   const FilterPolicy* filter_policy_;
   DB* db_;
   int num_;
+  int delete_num_;
   int value_size_;
   int entries_per_batch_;
   WriteOptions write_options_;
@@ -535,6 +538,7 @@ class Benchmark {
                            : nullptr),
         db_(nullptr),
         num_(FLAGS_num),
+        delete_num_(FLAGS_delete_num),
         value_size_(FLAGS_value_size),
         entries_per_batch_(1),
         reads_(FLAGS_reads < 0 ? FLAGS_num : FLAGS_reads),
@@ -578,6 +582,7 @@ class Benchmark {
 
       // Reset parameters that may be overridden below
       num_ = FLAGS_num;
+      delete_num_ = FLAGS_delete_num;
       reads_ = (FLAGS_reads < 0 ? FLAGS_num : FLAGS_reads);
       value_size_ = FLAGS_value_size;
       entries_per_batch_ = 1;
@@ -626,6 +631,12 @@ class Benchmark {
         method = &Benchmark::SeekRandom;
       } else if (name == Slice("seekordered")) {
         method = &Benchmark::SeekOrdered;
+      } else if (name == Slice("fillgivenseq")){    // wesley add
+        fresh_db = true;
+        method = &Benchmark::WriteTargetSeq;
+      } else if (name == Slice("fillgivenrandom")){
+        fresh_db = true;
+        method = &Benchmark::WriteTargetRandom;
       } else if (name == Slice("findkeysbyfield")) {
         method = &Benchmark::FindKeysByField;
       } else if (name == Slice("readhot")) {
@@ -977,12 +988,12 @@ class Benchmark {
         auto value = gen.Generate(value_size_);
         if (i < num_fields) {
           fields = {
-              {"field1", value.ToString()},
-              {"field2", "value2_"},
+            {"field1", value.ToString()},
+            {"field2", "value2_"},
           };
         } else {
           fields = {
-              {"field1", value.ToString()},
+            {"field1", value.ToString()},
           };
         }
 
@@ -1003,13 +1014,10 @@ class Benchmark {
 
   void FindKeysByField(ThreadState* thread){
     int found = 0;
-    FieldArray fields_to_find = {{"field2", "value2_"}};
-
-    std::string dbname_ = "benchmark_db";
     Options options;
     options.create_if_missing = true;
-    DBImpl* impl = new DBImpl(options, dbname_);
-
+    DBImpl* impl = new DBImpl(options, FLAGS_db);
+    FieldArray fields_to_find = {{"field2", "value2_"}};
     std::vector<std::string> found_keys = Fields::FindKeysByFields(db_, fields_to_find, impl);
     found = found_keys.size();
     char msg[100];
@@ -1059,7 +1067,7 @@ class Benchmark {
     WriteBatch batch;
     Status s;
     KeyBuffer key;
-    for (int i = 0; i < num_; i += entries_per_batch_) {
+    for (int i = 0; i < delete_num_; i += entries_per_batch_) {
       batch.Clear();
       for (int j = 0; j < entries_per_batch_; j++) {
         const int k = seq ? i + j : (thread->rand.Uniform(FLAGS_num));
@@ -1177,6 +1185,8 @@ int main(int argc, char** argv) {
       FLAGS_compression = n;
     } else if (sscanf(argv[i], "--num=%d%c", &n, &junk) == 1) {
       FLAGS_num = n;
+    } else if (sscanf(argv[i], "--delete_num=%d%c", &n, &junk) == 1) {
+      FLAGS_delete_num = n;
     } else if (sscanf(argv[i], "--reads=%d%c", &n, &junk) == 1) {
       FLAGS_reads = n;
     } else if (sscanf(argv[i], "--num_fields=%d%c", &n, &junk) == 1) {

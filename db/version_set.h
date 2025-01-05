@@ -269,14 +269,14 @@ class VersionSet {
   };
   const char* LevelSummary(LevelSummaryStorage* scratch) const;
 
-  // TODO begin
+  //注释：用于版本恢复时设置相关参数
   bool SaveImmLastSequence(){ return save_imm_last_sequence_; }
   bool StartImmLastSequence(bool save ){ save_imm_last_sequence_ = save; }
   void SetImmLastSequence( uint64_t seq ){ imm_last_sequence_ = seq; }
   uint64_t ImmLastSequence() const { return imm_last_sequence_; }
   uint64_t ImmLogFileNumber() const { return imm_log_file_number_; }
   void SetImmLogFileNumber( uint64_t fid ){ imm_log_file_number_ = fid; }
-  // TODO end
+
 
  private:
   class Builder;
@@ -313,13 +313,13 @@ class VersionSet {
   uint64_t log_number_;
   uint64_t prev_log_number_;  // 0 or backing store for memtable being compacted
 
-  // TODO begin
+  //注释： immemtable转sst的sequence
   uint64_t imm_last_sequence_;
-  // 是否保存 imm 转 sst时候的sequence，主要用在 LogAndApply 这个函数当中，用于区分是mior compact 还是 major compact的过程。
+  //注释： 是否保存 imm 转 sst时候的sequence，主要用在 LogAndApply 这个函数当中，用于区分是mior compact 还是 major compact的过程。
   bool save_imm_last_sequence_;
-  // imm_last_sequence 所处在的log文件
+  //注释：imm_last_sequence 所处在的log文件
   uint64_t imm_log_file_number_;
-  // TODO end
+
 
   // Opened lazily
   WritableFile* descriptor_file_;

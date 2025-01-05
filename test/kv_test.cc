@@ -11,9 +11,6 @@ constexpr int long_value_size = 32;
 constexpr int data_size = 512;
 
 Status OpenDB(std::string dbName, DB **db) {
-  std::string rm_command = "rm -rf " + dbName;
-  system(rm_command.c_str());
-  
   Options options;
   options.create_if_missing = true;
   return DB::Open(options, dbName, db);
@@ -68,7 +65,10 @@ TEST(TestKV, GetLongValue) {
     ReadOptions readOptions;
     Status status;
     int key_num = data_size / long_value_size;
-    for (int i = 0; i < key_num; i++) {
+    // for (int i = 0; i < key_num; i++) {
+    for (int i = key_num-1; i > -1; i--) {
+//    for (int i = 0; i < key_num - 1; i++) {
+        // int key_ = rand() % key_num+1;
         std::string key = std::to_string(i);
         std::string value;
         std::string expected_value(long_value_size, 'a');
