@@ -410,7 +410,7 @@ Status DBImpl::Recover(VersionEdit* edit, bool* save_manifest) {
   //   // update the file number allocation counter in VersionSet.
   //   versions_->MarkFileNumberUsed(logs[i]);
   // }
-  //TODO begin
+  //注释：逐个恢复日志的内容
   bool found_sequence_pos = false;
   for(int i = 0; i < logs.size(); ++i){
       if( logs[i] < versions_->ImmLogFileNumber() ) {
@@ -424,8 +424,7 @@ Status DBImpl::Recover(VersionEdit* edit, bool* save_manifest) {
           return s;
       }
   }
-    versions_->MarkFileNumberUsed(max_number);
-  //TODO end
+  versions_->MarkFileNumberUsed(max_number);
 
   if (versions_->LastSequence() < max_sequence) {
     versions_->SetLastSequence(max_sequence);
@@ -483,9 +482,8 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
   uint64_t record_offset = 0;
   int compactions = 0;
   MemTable* mem = nullptr;
-  // TODO begin
+  //注释：设置 imm_last_sequence
   uint64_t imm_last_sequence = versions_->ImmLastSequence();
-  // TODO end
   while (reader.ReadRecord(&record, &scratch) && status.ok()) {
     // if (record.size() < 12) {
     if (record.size() < 20) {
@@ -541,10 +539,9 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
       compactions++;
       *save_manifest = true;
 
-      // TODO begin mem 落盘修改 imm_last_sequence，版本恢复
+      // 注释：mem 落盘修改 imm_last_sequence，版本恢复
       versions_->SetImmLastSequence(mem->GetTailSequence());
       versions_->SetImmLogFileNumber(log_number);
-      // TODO end
 
       status = WriteLevel0Table(mem, edit, nullptr);
       mem->Unref();
@@ -587,10 +584,9 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
     // mem did not get reused; compact it.
     if (status.ok()) {
 
-      // TODO begin mem 落盘修改 imm_last_sequence，版本恢复
+      //注释： mem 落盘修改 imm_last_sequence，版本恢复
       versions_->SetImmLastSequence(mem->GetTailSequence());
       versions_->SetImmLogFileNumber(log_number);
-      // TODO end
       *save_manifest = true;
       status = WriteLevel0Table(mem, edit, nullptr);
     }
@@ -664,14 +660,12 @@ void DBImpl::CompactMemTable() {
     edit.SetPrevLogNumber(0);
     edit.SetLogNumber(logfile_number_);  // Earlier logs no longer needed
     // s = versions_->LogAndApply(&edit, &mutex_);
-    // TODO begin
-    //构建新版本，并将其加入到 version_当中
+    //注释： 构建新版本，并将其加入到 version_当中
     versions_->StartImmLastSequence(true);
     versions_->SetImmLastSequence(imm_->GetTailSequence());
     versions_->SetImmLogFileNumber(imm_->GetLogFileNumber());
     s = versions_->LogAndApply(&edit, &mutex_);
     versions_->StartImmLastSequence(false);
-    // TODO end
   }
 
   if (s.ok()) {

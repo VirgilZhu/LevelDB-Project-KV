@@ -34,6 +34,7 @@ WriteBatch::Handler::~Handler() = default;
 
 void WriteBatch::Clear() {
   belong_to_gc = false;
+  // belong_to_gc = true;
   rep_.clear();
   rep_.resize(kHeader);
 }

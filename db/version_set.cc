@@ -252,16 +252,15 @@ enum SaverState {
   kDeleted,
   kCorrupt,
 };
-// TODO begin
+// 注释：Saver的kv对是否分离
 enum SaverSeparate {
     kNotSeparated,
     kSeparated
 };
-// TODO end
+
 struct Saver {
-  // TODO begin
+  // 注释：初始设为不分离
   SaverSeparate separate = kNotSeparated;
-  // TODO end
   SaverState state;
   const Comparator* ucmp;
   Slice user_key;
@@ -279,9 +278,8 @@ static void SaveValue(void* arg, const Slice& ikey, const Slice& v) {
       s->state = (parsed_key.type == kTypeValue || parsed_key.type == kTypeSeparation) ? kFound : kDeleted;
       if (s->state == kFound) {
         s->value->assign(v.data(), v.size());
-        // TODO begin
+        // 注释：如果key.type是kTypeSeparation,则设为kSeparated类型
         s->separate =  ( parsed_key.type == kTypeSeparation ) ? kSeparated : kNotSeparated;
-        // TODO end
       }
     }
   }
@@ -367,13 +365,12 @@ Status Version::Get(const ReadOptions& options, const LookupKey& k,
       state->s = state->vset->table_cache_->Get(*state->options, f->number,
                                                 f->file_size, state->ikey,
                                                 &state->saver, SaveValue);
-      // TODO begin
+      // 注释：对于是否kv分离，调用不同的Set函数
       if( state->saver.separate == kSeparated ){
           state->s.SetSeparated();
       } else{
           state->s.SetNotSeparated();
       }
-      // TODO end
       if (!state->s.ok()) {
         state->found = true;
         return false;
@@ -761,6 +758,10 @@ VersionSet::VersionSet(const std::string& dbname, const Options* options,
       next_file_number_(2),
       manifest_file_number_(0),  // Filled by Recover()
       last_sequence_(0),
+      //注释：加上version_edit中添加的参数
+      imm_last_sequence_(0),
+      imm_log_file_number_(0),
+      save_imm_last_sequence_(false),
       log_number_(0),
       prev_log_number_(0),
       descriptor_file_(nullptr),
@@ -809,11 +810,10 @@ Status VersionSet::LogAndApply(VersionEdit* edit, port::Mutex* mu) {
   edit->SetNextFile(next_file_number_);
   edit->SetLastSequence(last_sequence_);
 
-    // TODO begin
+  // 注释：设置imm_last_sequence_和imm_log_file_number_
   if( SaveImmLastSequence() ){
       edit->SetImmLastSequence(imm_last_sequence_,imm_log_file_number_);
   }
-  // TODO end
 
   Version* v = new Version(this);
   {
@@ -919,11 +919,11 @@ Status VersionSet::Recover(bool* save_manifest) {
   bool have_next_file = false;
   bool have_last_sequence = false;
 
-  // TODO begin
+  //注释：重置version_edit里添加的参数
   bool have_imm_last_sequence = false;
   uint64_t imm_last_sequence = 0;
   uint64_t imm_log_file_number = 0;
-  // TODO end
+
 
   uint64_t next_file = 0;
   uint64_t last_sequence = 0;
@@ -975,13 +975,12 @@ Status VersionSet::Recover(bool* save_manifest) {
         last_sequence = edit.last_sequence_;
         have_last_sequence = true;
       }
-      // TODO begin
+      //注释： 构建当前的Version 回放参数
       if (edit.has_imm_last_sequence_) {
           imm_last_sequence = edit.imm_last_sequence_;
           imm_log_file_number = edit.imm_log_file_number_;
           have_imm_last_sequence = true;
       }
-      // TODO end
     }
   }
   delete file;
@@ -1015,10 +1014,9 @@ Status VersionSet::Recover(bool* save_manifest) {
     last_sequence_ = last_sequence;
     log_number_ = log_number;
     prev_log_number_ = prev_log_number;
-    // TODO begin
+    //注释：修改imm_last_sequence_和imm_log_file_number_
     imm_last_sequence_ = imm_last_sequence;
     imm_log_file_number_ = imm_log_file_number;
-    // TODO end
 
     // See if we can reuse the existing MANIFEST file.
     if (ReuseManifest(dscname, current)) {

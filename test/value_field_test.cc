@@ -28,7 +28,7 @@ class FieldsTest : public ::testing::Test {
   }
 
   DB* db_ = nullptr; // 数据库实例指针。
-  std::string dbname_ = "testdb"; // 记录数据库路径
+  std::string dbname_ = "testdb_field"; // 记录数据库路径
 };
 
 // 测试各种构造函数
