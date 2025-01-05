@@ -177,7 +177,7 @@ struct LEVELDB_EXPORT ReadOptions {
 
 // Options that control write operations
 struct LEVELDB_EXPORT WriteOptions {
-  explicit WriteOptions(size_t separateThreshold = 16)
+  explicit WriteOptions(size_t separateThreshold = 32)
       : separate_threshold(separateThreshold) {}
 //  WriteOptions() = default;
 

@@ -954,8 +954,8 @@ void DBImpl::MaybeScheduleGarbageCollection() {
     // 如果后台线程出错，也不调度。
   } else {
     //设置调度变量,通过detach线程调度;detach线程即使主线程退出,依然可以正常执行完成
-    background_GarbageCollection_scheduled_ = true;
-    env_->ScheduleForGarbageCollection(&DBImpl::GarbageCollectionBGWork, this);
+//    background_GarbageCollection_scheduled_ = true;
+//    env_->ScheduleForGarbageCollection(&DBImpl::GarbageCollectionBGWork, this);
   }
 }
 // 后台gc线程中执行的任务
@@ -1441,6 +1441,7 @@ int64_t DBImpl::TEST_MaxNextLevelOverlappingBytes() {
   return versions_->MaxNextLevelOverlappingBytes();
 }
 
+/* 从 VlogReader 读取的 VLog kv 数据对中解析出 value */
 bool DBImpl::ParseVlogValue(Slice key_value, Slice key,
                             std::string& value, uint64_t val_size) {
   Slice k_v = key_value;
@@ -1564,9 +1565,12 @@ Status DBImpl::Get(const ReadOptions& options, const Slice& key,
     uint64_t val_size;
     size_t key_size = key.size();
 
+    /* 已知该 value 保存在 VLog，解码出 vlog_ptr（fid, offset, val_size）*/
     GetVarint64(&vlog_ptr, &file_no);
     GetVarint64(&vlog_ptr, &offset);
     GetVarint64(&vlog_ptr, &val_size);
+
+    /* VLog 内部 kv 对的编码长度，1B 为 type */
     uint64_t encoded_len = 1 + VarintLength(key_size) + key.size() + VarintLength(val_size) + val_size;
 
     std::string fname = LogFileName(dbname_, file_no);
@@ -2022,7 +2026,7 @@ Status DB::Open(const Options& options, const std::string& dbname, DB** dbptr) {
     impl->RemoveObsoleteFiles();
     impl->MaybeScheduleCompaction();
   }
-  // TODO beigin 开始全盘的回收。
+  // TODO begin 开始全盘的回收。
 
   if( s.ok() && impl->options_.start_garbage_collection ){
       if( s.ok() ){

@@ -30,6 +30,7 @@ bool VlogReader::ReadValue(uint64_t offset, size_t length, Slice *key_value, cha
   if (file_random_ == nullptr) {
     return false;
   }
+  /* 随机读取一个 RandomAccessFile，使用对应的读接口 Read 函数 */
   Status status = file_random_->Read(offset, length, key_value, scratch);
   if (!status.ok()) {
     return false;
@@ -60,6 +61,7 @@ bool VlogReader::ReadPhysicalRecord(std::string *result) {
   buffer_.clear();
 
   char* tmp_head = new char[vHeaderSize];
+  /* 顺序读取一个 SequentialFile，使用对应的读接口 Read 函数 */
   Status status = file_->Read(vHeaderSize, &buffer_, tmp_head);
   if (!status.ok()) {
     buffer_.clear();

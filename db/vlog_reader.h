@@ -22,6 +22,7 @@ class VlogReader {
                 virtual void Corruption(size_t bytes, const Status& status) = 0;
         };
 
+        // 支持随机读与顺序读，提升顺序读取的效率
         explicit VlogReader(SequentialFile* file, Reporter* reporter);
         explicit VlogReader(RandomAccessFile* file, Reporter* reporter);
 

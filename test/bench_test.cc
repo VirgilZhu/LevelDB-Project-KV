@@ -153,11 +153,11 @@ void RunBenchmark(const char* name, Func func, bool setup_data = true, bool setu
   delete db;
 }
 
-// TEST(BenchTest, PutLatency) { RunBenchmark("Put", InsertData, false, false); }
-// TEST(BenchTest, PutFieldsLatency) { RunBenchmark("PutFields", InsertFields, false, false); }
+ TEST(BenchTest, PutLatency) { RunBenchmark("Put", InsertData, false, false); }
+ TEST(BenchTest, PutFieldsLatency) { RunBenchmark("PutFields", InsertFields, false, false); }
 
-// TEST(BenchTest, GetLatency) { RunBenchmark("Get", GetData, true, false); }
-// TEST(BenchTest, IteratorLatency) { RunBenchmark("Iterator", ReadOrdered, true, false); }
+ TEST(BenchTest, GetLatency) { RunBenchmark("Get", GetData, true, false); }
+ TEST(BenchTest, IteratorLatency) { RunBenchmark("Iterator", ReadOrdered, true, false); }
 
 TEST(BenchTest, FindKeysByFieldLatency) {
   RunBenchmark("FindKeysByFields", FindKeys, false, true);

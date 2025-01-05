@@ -29,11 +29,6 @@ static const int kBlockSize = 32768;
 // Header is checksum (4 bytes), length (2 bytes), type (1 byte).
 static const int kHeaderSize = 4 + 2 + 1;
 
-
-/* 需要再研究下 */
-//4M 每次读取 vlog 的大小，GC 和 恢复 会用到
-//static const int vBlockSize = 4*1024*1024;
-
 // VlogHeader 只包含 length (4 bytes).
 static const int vHeaderSize = 4;
 // write_batch Header

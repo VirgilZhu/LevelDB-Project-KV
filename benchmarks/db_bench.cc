@@ -50,6 +50,8 @@ static const char* FLAGS_benchmarks =
     "fillsync,"
     "fillrandom,"
     "overwrite,"
+    "deleteseq,"
+    "deleterandom,"
     "readrandom,"
     "readrandom,"  // Extra run to allow previous compactions to quiesce
     "readseq,"
@@ -59,6 +61,8 @@ static const char* FLAGS_benchmarks =
     "findkeysbyfield,"
     "readseq,"
     "readreverse,"
+    "seekrandom,"
+    "seekordered,"
     "fill100K,";
 // "crc32c,"
 // "snappycomp,"
