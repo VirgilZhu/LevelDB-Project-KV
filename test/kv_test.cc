@@ -7,7 +7,7 @@
 using namespace leveldb;
 
 constexpr int short_value_size = 4;
-constexpr int long_value_size = 32;
+constexpr int long_value_size = 64;
 constexpr int data_size = 512;
 
 Status OpenDB(std::string dbName, DB **db) {
@@ -65,16 +65,11 @@ TEST(TestKV, GetLongValue) {
     ReadOptions readOptions;
     Status status;
     int key_num = data_size / long_value_size;
-    // for (int i = 0; i < key_num; i++) {
-    for (int i = key_num-1; i > -1; i--) {
-//    for (int i = 0; i < key_num - 1; i++) {
-        // int key_ = rand() % key_num+1;
+     for (int i = 0; i < key_num; i++) {
         std::string key = std::to_string(i);
         std::string value;
         std::string expected_value(long_value_size, 'a');
         status = db->Get(readOptions, key, &value);
-//        std::cout << key << std::endl;
-//        std::cout << status.ToString() << std::endl;
         ASSERT_TRUE(status.ok());
         EXPECT_EQ(expected_value, value);
     }

@@ -76,9 +76,9 @@ class LEVELDB_EXPORT WriteBatch {
   Status Iterate(Handler* handler) const;
   Status Iterate(Handler* handler, uint64_t fid, uint64_t offset) const;
 
-  bool IsGarbageColletion() { return belong_to_gc; }
+  bool IsGarbageCollection() { return belong_to_gc; }
 
-  void setGarbageColletion(bool is_gc) { belong_to_gc = is_gc; }
+  void setGarbageCollection(bool is_gc) { belong_to_gc = is_gc; }
 
  private:
   friend class WriteBatchInternal;
