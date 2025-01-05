@@ -787,13 +787,13 @@ class PosixEnv : public Env {
   std::queue<BackgroundWorkItem> background_work_queue_
       GUARDED_BY(background_work_mutex_);
 
-  // TODO begin gc 回收相关的变量
+  // begin 注释：GC 线程互斥锁
   port::Mutex background_GlobalCollection_work_mutex_;
   port::CondVar background_GlobalCollection_work_cv_ GUARDED_BY(background_GlobalCollection_work_mutex_);
 
   std::queue<BackgroundWorkItem> background_GlobalCollection_work_queue_
       GUARDED_BY(background_GlobalCollection_work_mutex_);
-  // TODO end
+  // end
 
   PosixLockTable locks_;  // Thread-safe.
   Limiter mmap_limiter_;  // Thread-safe.

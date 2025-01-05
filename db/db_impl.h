@@ -84,10 +84,11 @@ class DBImpl : public DB {
   // bytes.
   void RecordReadSample(Slice key);
 
-  // TODO begin
+  // begin 注释：手动进行离线回收
   Status OutLineGarbageCollection();
+  // 注释：在线 GC，读取并回收一个 vlog 文件
   Status GetAllValueLog(std::string dir, std::vector<uint64_t>& logs);
-  // TODO end
+  // end
 
  private:
   friend class DB;
@@ -157,13 +158,14 @@ class DBImpl : public DB {
 
   void MaybeScheduleCompaction() EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
-  // TODO begin
+  // begin 注释：参考 Compaction 的调度机制，对于 GC 也声明：
+  // GCBGWork、GCBackgroundCall、MaybeScheduleGC、BackGroundGC
   static void GarbageCollectionBGWork(void* db);
   void GarbageCollectionBackgroundCall();
   void MaybeScheduleGarbageCollection() EXCLUSIVE_LOCKS_REQUIRED(mutex_);
   void BackGroundGarbageCollection();
   Status CollectionValueLog(uint64_t fid, uint64_t& last_sequence);
-  // TODO end
+  // end
 
   static void BGWork(void* db);
   void BackgroundCall();
@@ -182,9 +184,10 @@ class DBImpl : public DB {
     return internal_comparator_.user_comparator();
   }
 
-  // TODO begin
-  Status GetLsm( const Slice& key,std::string* value);
-  // TODO end
+  // 注释：GC 某个 VLog 文件时，每回收一条 record，
+  // 用于回查 LSM-tree 中该 record 里的所有 kv 是否依然存活，
+  // 再往 db 写回属于 GC 流程的写回 WriteBatch（只包含存活的有效 KV 数据对）
+  Status GetLsm( const Slice& key, std::string* value);
 
   // Constant after construction
   Env* const env_;
@@ -210,7 +213,6 @@ class DBImpl : public DB {
   std::atomic<bool> has_imm_;         // So bg thread can detect non-null imm_
   WritableFile* logfile_;
   uint64_t logfile_number_ GUARDED_BY(mutex_);
-//  log::VlogWriter* log_;
   uint32_t seed_ GUARDED_BY(mutex_);  // For sampling.
 
   // Queue of writers.
@@ -239,16 +241,14 @@ class DBImpl : public DB {
 
   int vlog_kv_numbers_;
 
-  // TODO begin 用于gc回收的过程
-
+  // begin 注释：用于 gc 的线程互斥锁
   port::CondVar garbage_collection_work_signal_ GUARDED_BY(mutex_);
-  // 表示后台gc线程是否已经被调度或者在运行
+  // 表示后台 gc 线程是否正被调度
   bool background_GarbageCollection_scheduled_ GUARDED_BY(mutex_);
-
+  // 若为 true 则表示不允许后台 GC 线程继续进行
   bool finish_back_garbage_collection_;
+  // end
   SeparateManagement* garbage_collection_management_;
-
-  // TODO end
 };
 
 // Sanitize db options.  The caller should delete result.info_log if

@@ -5,8 +5,6 @@
 
 namespace leveldb {
 
-// 改变 db 的 last_sequence，给每一个需要进行gc回收的value log 文件分配 新的sequence的序号，
-// 以便对value log 中的有效key的重新put进新的value log 中。返回值决定是否进行gc
 bool SeparateManagement::ConvertQueue(uint64_t& db_sequence) {
     if (!need_updates_.empty()) {
         db_sequence++;
@@ -25,7 +23,6 @@ bool SeparateManagement::ConvertQueue(uint64_t& db_sequence) {
     return true;
 }
 
-// 每一个vlog 罗盘的时候都会在map_file_info_ 中添加索引 ，这个在新建一个value log的时候会用到。
 void SeparateManagement::WriteFileMap(uint64_t fid, int kv_numbers, size_t log_memory) {
     assert(map_file_info_.find(fid) == map_file_info_.end());
     ValueLogInfo* info = new ValueLogInfo();
@@ -38,8 +35,6 @@ void SeparateManagement::WriteFileMap(uint64_t fid, int kv_numbers, size_t log_m
     map_file_info_.insert(std::make_pair(fid,info));
 }
 
-// map_file_info_ 存放了所有的value log 的信息，每次删除一个key的时候要对这个key对应的value log计算空间无效利用率
-// 所以要统计有多少空间是无效的，以便后面进行触发gc的过程。
 void SeparateManagement::UpdateMap(uint64_t fid, uint64_t abandon_memory) {
     if (map_file_info_.find(fid) != map_file_info_.end()) {
         ValueLogInfo* info = map_file_info_[fid];
@@ -48,7 +43,6 @@ void SeparateManagement::UpdateMap(uint64_t fid, uint64_t abandon_memory) {
     }
 }
 
-// 遍历 map_file_info_ 中所有的file 找到无效空间最大的log 进行gc回收 ，这个文件要不存在 delete_files_中
 void SeparateManagement::UpdateQueue(uint64_t fid) {
     std::priority_queue<ValueLogInfo*, std::vector<ValueLogInfo*>, MapCmp> sort_priority_;
 
@@ -57,29 +51,32 @@ void SeparateManagement::UpdateQueue(uint64_t fid) {
             sort_priority_.push(iter->second);
         }
     }
+    /* 默认每次只把一个 VLog 加入到 GC 队列 */
     int num = 1;
     int threshold = garbage_collection_threshold_;
     if (!sort_priority_.empty()
         && sort_priority_.top()->invalid_memory_ >= garbage_collection_threshold_ * 1.2) {
+        /* 如果无效空间最多的 VLog 超过 GC 阈值 20%，这次会把 1~3 个 VLog 加入到 GC 队列  */
         num = 3;
         threshold = garbage_collection_threshold_ * 1.2;
     }
     while (!sort_priority_.empty() && num > 0) {
         ValueLogInfo* info = sort_priority_.top();
         sort_priority_.pop();
+        /* 优先删除较旧的 VLog */
         if (info->logfile_number_ > fid) {
             continue;
         }
         num--;
         if (info->invalid_memory_ >= threshold) {
             need_updates_.push_back(info);
+            /* 更新准备 GC（准备删除）的 VLog */
             delete_files_.insert(info->logfile_number_);
         }
     }
 }
 
-// gc回收线程用来获得需要回收的文件
-bool SeparateManagement::GetGarbageCollectionQueue(uint64_t& fid, uint64_t& last_sequence){
+bool SeparateManagement::GetGarbageCollectionQueue(uint64_t& fid, uint64_t& last_sequence) {
     if (garbage_collection_.empty()) {
         return false;
     } else {
